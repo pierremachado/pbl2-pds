@@ -1,16 +1,15 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-#ifndef
-#define F_CPU 16000000UL
+#ifndef F_CPU 16000000UL
 #endif
 
-#define BAUD 9600
-#define BUFFER_SIZE 4096
+#define BAUD 9600U
+#define BUFFER_SIZE 1024U
 
-static uint8_t adc_buffer[BUFFER_SIZE];
-static volatile uint16_t buffer_index = 0;
-static volatile uint8_t buffer_full = 0;
+uint16_t adc_buffer[BUFFER_SIZE];
+volatile uint16_t buffer_index = 0;
+volatile uint8_t buffer_full = 0;
 
 void UART0_Init(void) {
     unsigned int ubrr_val = (F_CPU / (16UL * BAUD)) - 1;
@@ -39,6 +38,30 @@ void ADC_Init(void) {
     DIDR0 |= (1 << ADC0D);
 }
 
+uint8_t ADC_Read(uint8_t canal) {
+    canal &= 0x0F;
+
+    // Referência interna de 2,56 V
+    // Alinhamento à esquerda para read de 8 bits
+    ADMUX = (1 << REFS1) | (1 << REFS0)
+          | (1 << ADLAR) | (canal & 0x07);
+
+    // Seleciona canais 0 a 15
+    if (canal & 0x08) {
+        ADCSRB |= (1 << MUX5);
+    } else {
+        ADCSRB &= ~(1 << MUX5);
+    }
+
+    // Inicia a conversão
+    ADCSRA |= (1 << ADSC);
+
+    // Aguarda a conversão terminar
+    while (ADCSRA & (1 << ADSC));
+
+    return ADCH;
+}
+
 void Timer1_Init(void) {
     // Configuração do Timer 1 (CTC) para f_amostragem = 15,38 kSPS (~60 Hz / 2 ciclos em 512 amostras)
     TCCR1A = 0; 
@@ -49,7 +72,7 @@ void Timer1_Init(void) {
 // Rotina de Interrupção da Conversão A/D (executada em segundo plano)
 ISR(ADC_vect) {
     if (!buffer_full) {
-        adc_buffer[buffer_index++] = ADCH; // Leitura do byte de 8 bits
+        adc_buffer[buffer_index++] = ADC_Read(0); // Leitura do byte de 8 bits
         if (buffer_index >= BUFFER_SIZE) {
             buffer_full = 1;
         }
@@ -62,21 +85,31 @@ void UART0_Transmit(uint8_t data) {
 }
 
 void setup(void) {
+    cli();
+
     UART0_Init();
     ADC_Init();
+
+    // Seleciona a referência interna e permite estabilização.
+    ADC_Read(0);
+    _delay_ms(2);
+    ADC_Read(0);  // Descarta a read de preparação.
+
     Timer1_Init();
     sei(); // Habilita interrupções globais
 }
 
 void loop(void) {
-    if (buffer_full) {
-        // Envia o buffer completo via UART
-        for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
-            UART0_Transmit(adc_buffer[i]);
-        }
+    while (1) {
+        if (buffer_full) {
+            // Envia o buffer completo via UART
+            for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
+                UART0_Transmit(adc_buffer[i]);
+            }
 
-        // Reinicia a captura para o próximo bloco
-        buffer_index = 0;
-        buffer_full = 0;
+            // Reinicia a captura para o próximo bloco
+            buffer_index = 0;
+            buffer_full = 0;
+        }
     }
 }
