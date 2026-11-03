@@ -144,12 +144,6 @@ void setup(void) {
   cli();
   ADC_Init();
   UART0_Init();
-
-  // Seleciona a referência interna e permite estabilização.
-  ADC_Read(0);
-  _delay_ms(2);
-  ADC_Read(0);  // Descarta a read de preparação.
-
   Timer1_Init();
   sei();
 }
