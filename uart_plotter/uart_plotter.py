@@ -15,8 +15,8 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import TextBox
 import serial
 
-BAUD = 9600
-FPS = 5
+BAUD = 115200
+FPS = 1
 BUFFER_SIZE = 32768  # Buffer circular: descarta as amostras mais antigas.
 
 
