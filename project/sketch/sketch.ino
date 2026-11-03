@@ -1,165 +1,82 @@
-#define F_CPU 16000000UL
-
 #include <avr/io.h>
-#include <util/delay.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <avr/interrupt.h>
 
+#ifndef
+#define F_CPU 16000000UL
+#endif
+
 #define BAUD 9600
-#define BUFFER_SIZE 1024
-#define SAMPLE_RATE 500UL
+#define BUFFER_SIZE 4096
 
-// Variáveis globais usadas pelas interrupções.
-volatile uint8_t sampling_buffer[BUFFER_SIZE];
+static uint8_t adc_buffer[BUFFER_SIZE];
+static volatile uint16_t buffer_index = 0;
+static volatile uint8_t buffer_full = 0;
 
-volatile uint16_t escrita = 0;
-volatile uint16_t leitura = 0;
-volatile uint16_t perdas = 0;
+void UART0_Init(void) {
+    unsigned int ubrr_val = (F_CPU / (16UL * BAUD)) - 1;
 
-// Função para inicializar a UART0
-void UART0_Init(unsigned int baudrate) {
-    // Calcular o valor do registrador UBRR para o modo normal (Asynchronous Normal)
-    // Fórmula do datasheet: UBRR = (F_CPU / (16 * Baud)) - 1
-    unsigned int ubrr_val = (F_CPU / (16UL * baudrate)) - 1;
-    
     // Define a velocidade (divide em parte alta e baixa)
     UBRR0H = (unsigned char)(ubrr_val >> 8);
     UBRR0L = (unsigned char)(ubrr_val);
-    
-    // Habilita o Transmissor (TX) e o Receptor (RX)
-    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
-    
-    // Configura o formato do frame: Assíncrono, Sem Paridade, 1 Stop Bit, 8 bits de dados (8N1)
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
+
+    UCSR0B = (1 << TXEN0); // Habilita TX
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8N1
 }
 
-uint8_t UART0_Transmit(unsigned char data) {
-    while (!(UCSR0A & (1 << UDRE0)));
-
-    UDR0 = data;
-    return 1;
-}
-
-// Função para transmitir uma string completa
-void UART0_Print(const char* str) {
-    while (*str) {
-        UART0_Transmit(*str++);
-    }
-}
-
-// Inicializa o ADC
 void ADC_Init(void) {
-    // 1. Configura a Referência de Tensão para AVCC (5V no Arduino Mega)
-    // REFS1 = 0, REFS0 = 1
-    ADMUX = (1 << REFS0);
-    
-    // 2. Ativa o ADC e define o Prescaler para 128 (16MHz / 128 = 125kHz)
-    // ADEN = 1 (Liga ADC)
-    // ADPS2=1, ADPS1=1, ADPS0=1 (Prescaler 128)
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
-}
+    // Configuração do ADC
+    // Referência AVcc (REFS0=1), Alinhamento à esquerda de 8 bits (ADLAR=1), Canal A0 (MUX=00000)
+    ADMUX = (1 << REFS0) | (1 << ADLAR);
 
-uint8_t ADC_Read(uint8_t canal) {
-    canal &= 0x0F;
+    // Habilita ADC (ADEN), Disparo Automático (ADATE), Interrupção ADC (ADIE)
+    // Prescaler do ADC = 16 (ADPS2=1 -> Clock ADC = 1 MHz, conversão rápida de 13 us)
+    ADCSRA = (1 << ADEN) | (1 << ADATE) | (1 << ADIE) | (1 << ADPS2);
 
-    // Referência interna de 2,56 V
-    // Alinhamento à esquerda para leitura de 8 bits
-    ADMUX = (1 << REFS1) | (1 << REFS0)
-          | (1 << ADLAR) | (canal & 0x07);
+    // Fonte de disparo automático = Compare Match B do Timer 1 (ADTS2:0 = 101)
+    ADCSRB = (1 << ADTS2) | (1 << ADTS0);
 
-    // Seleciona canais 0 a 15
-    if (canal & 0x08) {
-        ADCSRB |= (1 << MUX5);
-    } else {
-        ADCSRB &= ~(1 << MUX5);
-    }
-
-    // Inicia a conversão
-    ADCSRA |= (1 << ADSC);
-
-    // Aguarda a conversão terminar
-    while (ADCSRA & (1 << ADSC));
-
-    return ADCH;
+    // Desabilita buffer digital do pino A0 (ADC0)
+    DIDR0 |= (1 << ADC0D);
 }
 
 void Timer1_Init(void) {
-    // Para o timer durante a configuração.
-    TCCR1A = 0;
-    TCCR1B = 0;
-    TCNT1 = 0;
-
-    // 16 MHz / (64 * (499 + 1)) = 500 Hz
-    OCR1A = (F_CPU / (64UL * SAMPLE_RATE)) - 1;
-
-    // Limpa uma possível interrupção pendente.
-    TIFR1 = (1 << OCF1A);
-
-    // Habilita interrupção por comparação A.
-    TIMSK1 = (1 << OCIE1A);
-
-    // Modo CTC e prescaler de 64.
-    TCCR1B = (1 << WGM12)
-           | (1 << CS11)
-           | (1 << CS10);
+    // Configuração do Timer 1 (CTC) para f_amostragem = 15,38 kSPS (~60 Hz / 2 ciclos em 512 amostras)
+    TCCR1A = 0; 
+    TCCR1B = (1 << WGM12) | (1 << CS11); // Modo CTC (WGM12=1), Prescaler = 8 (CS11=1)
+    OCR1A = 129;                         // Periodo = 8 * 130 / 16MHz = 65 us
 }
 
-// Executada a cada 2 ms.
-ISR(TIMER1_COMPA_vect) {
-    uint8_t amostra = ADC_Read(0);
-
-    uint16_t proxima = escrita + 1;
-    if (proxima >= BUFFER_SIZE) {
-        proxima = 0;
-    }
-
-    // Uma posição fica reservada para distinguir cheio de vazio.
-    if (proxima == leitura) {
-        perdas++;
-        return;
-    }
-
-    sampling_buffer[escrita] = amostra;
-    escrita = proxima;
-
-    // Habilita o envio por interrupção.
-    UCSR0B |= (1 << UDRIE0);
-}
-
-// Executada quando UDR0 está disponível para outro byte.
-ISR(USART0_UDRE_vect) {
-    if (leitura == escrita) {
-        // Sem dados: desliga a interrupção de transmissão.
-        UCSR0B &= ~(1 << UDRIE0);
-        return;
-    }
-
-    UDR0 = sampling_buffer[leitura];
-
-    leitura++;
-    if (leitura >= BUFFER_SIZE) {
-        leitura = 0;
+// Rotina de Interrupção da Conversão A/D (executada em segundo plano)
+ISR(ADC_vect) {
+    if (!buffer_full) {
+        adc_buffer[buffer_index++] = ADCH; // Leitura do byte de 8 bits
+        if (buffer_index >= BUFFER_SIZE) {
+            buffer_full = 1;
+        }
     }
 }
 
-int main(void) {
-    cli();
+void UART0_Transmit(uint8_t data) {
+    while (!(UCSR0A & (1 << UDRE0)));
+    UDR0 = data;
+}
 
+void setup(void) {
+    UART0_Init();
     ADC_Init();
-    UART0_Init(BAUD);
-
-    // Seleciona a referência interna e permite estabilização.
-    ADC_Read(0);
-    _delay_ms(2);
-    ADC_Read(0);  // Descarta a leitura de preparação.
-
     Timer1_Init();
-    sei();
+    sei(); // Habilita interrupções globais
+}
 
-    while (1) {
-        // Captura e transmissão acontecem nas interrupções.
+void loop(void) {
+    if (buffer_full) {
+        // Envia o buffer completo via UART
+        for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
+            UART0_Transmit(adc_buffer[i]);
+        }
+
+        // Reinicia a captura para o próximo bloco
+        buffer_index = 0;
+        buffer_full = 0;
     }
-
-    return 0;
 }
