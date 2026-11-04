@@ -6,15 +6,21 @@
 #endif
 
 #define BAUD 115200UL
-#define BUFFER_SIZE 1024U
-#define SAMPLE_RATE 4000U
+#define MAX_BUFFER_SIZE 6144U
+#define MIN_SAMPLE_RATE 31U
 #define DISCARDED_READS 16U
 
-// Variáveis globais usadas pelas interrupções
-static volatile uint8_t sampling_buffer[BUFFER_SIZE];
-static volatile uint16_t write_idx = 0;
-static volatile uint16_t read_idx = 0;
-static volatile uint8_t buffer_overrun = 0;
+// códigos de status enviados ao Octave antes do bloco de amostras
+#define STATUS_OK          0x00U
+#define STATUS_ERR_PARAM   0x01U
+#define STATUS_ERR_OVERRUN 0x02U
+
+// buffer em RAM para armazenar o bloco completo antes do envio (Store-and-Forward)
+static uint8_t sampling_buffer[MAX_BUFFER_SIZE];
+static uint16_t target_samples = 4096U;
+static uint16_t write_idx = 0;
+static volatile uint8_t capture_done = 0;
+static volatile uint8_t capture_error = 0;
 
 // inicializa o uart
 void UART0_Init(void) {
@@ -30,24 +36,27 @@ void UART0_Init(void) {
   // formato do frame: assíncrono, 8 bits de dados, sem paridade, 1 stop bit (8N1)
   UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
 
-  // habilita apenas o transmissor (TX)
-  UCSR0B = (1 << TXEN0);
+  // habilita receptor (RX para receber configuração/gatilho) e transmissor (TX)
+  UCSR0B = (1 << RXEN0) | (1 << TXEN0);
 }
 
-// transmissão por polling: só deve ser usada quando o ISR da UART não está
-// ativo, para que exista um único escritor em UDR0
-uint8_t UART0_Transmit(unsigned char data) {
+// transmite um byte por polling
+void UART0_Transmit(uint8_t data) {
   while (!(UCSR0A & (1 << UDRE0)));
-
   UDR0 = data;
-  return 1;
 }
 
-// transmite uma string completa (também por polling)
-void UART0_Print(const char* str) {
-  while (*str) {
-      UART0_Transmit(*str++);
-  }
+// recebe um byte pela UART por polling
+uint8_t UART0_Receive(void) {
+  while (!(UCSR0A & (1 << RXC0)));
+  return UDR0;
+}
+
+// recebe um inteiro de 16 bits (little-endian) pela UART
+uint16_t UART0_Receive16(void) {
+  uint8_t low = UART0_Receive();
+  uint8_t high = UART0_Receive();
+  return (uint16_t)low | ((uint16_t)high << 8);
 }
 
 // inicializa o ADC
@@ -59,23 +68,15 @@ void ADC_Init(uint8_t channel) {
   // MUX2:0: três bits menos significativos do canal
   ADMUX = (1 << REFS1) | (1 << REFS0) | (1 << ADLAR) | (channel & 0b111);
 
-  // MUX5 = 1 seleciona os canais 8 a 15
-  if (channel & 0b1000) {
-      ADCSRB |= (1 << MUX5);
-  } else {
-      ADCSRB &= ~(1 << MUX5);
-  }
+  // limpa ADCSRB (ADTS2:0 = 000, ACME = 0) e define MUX5 = 1 para canais 8 a 15
+  ADCSRB = (channel & 0b1000) ? (1 << MUX5) : 0;
 
-  // ADEN = 1: liga o ADC
-  // ADPS2:0 = 100: prescaler 16, ou seja, clock do ADC de 1 MHz
+  // ADEN = 1: liga o ADC com prescaler inicial 16 (1 MHz)
   ADCSRA = (1 << ADEN) | (1 << ADPS2);
 
-  // desabilita o buffer digital do pino do canal escolhido
-  if (channel > 8) {
-      DIDR0 |= (1 << channel);
-  } else {
-      DIDR2 |= (1 << (channel - 8));
-  }
+  // desabilita apenas o buffer digital do pino do canal escolhido
+  DIDR0 = (channel < 8) ? (1 << channel) : 0;
+  DIDR2 = (channel >= 8) ? (1 << (channel - 8)) : 0;
 }
 
 uint8_t ADC_Read(void) {
@@ -88,14 +89,37 @@ uint8_t ADC_Read(void) {
   return ADCH;
 }
 
-void Timer1_Init(void) {
+// configura o prescaler do ADC (16, 32, 64 ou 128) apenas se mudar
+void ADC_SetPrescaler(uint8_t prescaler) {
+  static uint8_t current_prescaler = 16;
+  if (prescaler == current_prescaler) {
+    return;
+  }
+
+  uint8_t adps_bits;
+  switch (prescaler) {
+    case 16:  adps_bits = (1 << ADPS2); break;
+    case 32:  adps_bits = (1 << ADPS2) | (1 << ADPS0); break;
+    case 64:  adps_bits = (1 << ADPS2) | (1 << ADPS1); break;
+    case 128: adps_bits = (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); break;
+    default:  adps_bits = (1 << ADPS2); prescaler = 16; break;
+  }
+
+  ADCSRA = (ADCSRA & ~((1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0))) | adps_bits;
+  current_prescaler = prescaler;
+
+  for (uint8_t i = 0; i < DISCARDED_READS; i++) {
+    ADC_Read();
+  }
+}
+
+void Timer1_Start(uint16_t sample_rate) {
   TCCR1A = 0;
   TCCR1B = 0;
   TCNT1 = 0;
 
-  // período da amostragem: (OCR1A + 1) * prescaler / F_CPU, com prescaler 8
-  // F_CPU / (8 * 2000) =  1000
-  OCR1A = (F_CPU / (8UL * SAMPLE_RATE)) - 1;
+  // período da amostragem com arredondamento para o inteiro mais próximo (prescaler 8)
+  OCR1A = (uint16_t)(((F_CPU + (4UL * sample_rate)) / (8UL * sample_rate)) - 1UL);
 
   // limpa interrupção pendente
   TIFR1 = (1 << OCF1A);
@@ -107,49 +131,35 @@ void Timer1_Init(void) {
   TCCR1B = (1 << WGM12) | (1 << CS11);
 }
 
-// Executada a cada período de amostragem
+// Executada a cada período de amostragem (sem concorrência da UART)
 ISR(TIMER1_COMPA_vect) {
   uint8_t sample = ADC_Read();
 
-  uint16_t next = write_idx + 1;
-  if (next >= BUFFER_SIZE) {
-      next = 0;
-  }
+  uint16_t idx = write_idx;
+  sampling_buffer[idx++] = sample;
+  write_idx = idx;
 
-  // buffer cheio: avançar write_idx o faria alcançar read_idx
-  if (next == read_idx) {
-      // a amostra foi perdida e a captura deixa de ser válida.
-      // para a amostragem (desliga a interrupção do Timer1) e avisa o loop()
-      buffer_overrun = 1;
+  // se OCF1A já disparou novamente durante a conversão ou gravação na RAM,
+  // o tempo de execução superou o período de amostragem (perda de sincronismo)
+  if (TIFR1 & (1 << OCF1A)) {
       TIMSK1 &= ~(1 << OCIE1A);
+      TCCR1B = 0;
+      capture_error = 1;
+      capture_done = 1;
       return;
   }
 
-  sampling_buffer[write_idx] = sample;
-  write_idx = next;
-
-  // habilita o envio por interrupção
-  UCSR0B |= (1 << UDRIE0);
-}
-
-// executada quando UDR0 está disponível para outro byte
-ISR(USART0_UDRE_vect) {
-  if (read_idx == write_idx) {
-      // sem dados: desliga a interrupção de transmissão
-      UCSR0B &= ~(1 << UDRIE0);
-      return;
-  }
-
-  UDR0 = sampling_buffer[read_idx];
-
-  read_idx++;
-  if (read_idx >= BUFFER_SIZE) {
-      read_idx = 0;
+  if (idx >= target_samples) {
+      // bloco completo: para o Timer1 e sinaliza o fim da captura para o loop()
+      TIMSK1 &= ~(1 << OCIE1A);
+      TCCR1B = 0;
+      capture_done = 1;
   }
 }
 
 void setup(void) {
   cli();
+  TIMSK0 = 0;  // desabilita o Timer0 do Arduino (millis) para evitar jitter na amostragem
   ADC_Init(0);
   UART0_Init();
 
@@ -157,19 +167,46 @@ void setup(void) {
     ADC_Read();
   }
 
-  Timer1_Init();
   sei();
 }
 
 void loop(void) {
-  if (buffer_overrun) {
-    // o Timer1 já foi desligado. espera o ISR da UART esvaziar o buffer,
-    // depois disso o loop passa a ser o único escritor em UDR0
-    while (read_idx != write_idx);
+  // 1. Aguarda pacote de 5 bytes do Octave:
+  //    - 1 byte (uint8):   prescaler do ADC (16, 32, 64 ou 128)
+  //    - 2 bytes (uint16): frequência de amostragem fs em Hz
+  //    - 2 bytes (uint16): quantidade de amostras a capturar
+  uint8_t prescaler = UART0_Receive();
+  uint16_t sample_rate = UART0_Receive16();
+  uint16_t num_samples = UART0_Receive16();
 
-    UART0_Print("\nPERDA\n");
+  if (sample_rate < MIN_SAMPLE_RATE || num_samples == 0 || num_samples > MAX_BUFFER_SIZE) {
+      UART0_Transmit(STATUS_ERR_PARAM);
+      return;
+  }
 
-    // captura inválida: fica parado até o reset
-    while (1);
+  // 2. Atualiza o prescaler (se mudou, descarta leituras iniciais para estabilizar)
+  ADC_SetPrescaler(prescaler);
+
+  // 3. Captura o bloco em RAM com a UART silenciosa (zero jitter)
+  target_samples = num_samples;
+  write_idx = 0;
+  capture_error = 0;
+  capture_done = 0;
+  asm volatile("" ::: "memory");
+  Timer1_Start(sample_rate);
+
+  while (!capture_done);
+  asm volatile("" ::: "memory");
+
+  // 4. Se houve perda (T_conv > T_s), notifica erro imediatamente ao Octave
+  if (capture_error) {
+      UART0_Transmit(STATUS_ERR_OVERRUN);
+      return;
+  }
+
+  // 5. Envia byte de status OK seguido do bloco completo pela UART
+  UART0_Transmit(STATUS_OK);
+  for (uint16_t i = 0; i < num_samples; i++) {
+      UART0_Transmit(sampling_buffer[i]);
   }
 }
