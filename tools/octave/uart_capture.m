@@ -9,7 +9,7 @@ baud_rate = 115200;
 output_dir = fullfile(fileparts(mfilename("fullpath")), "data");
 
 signal_frequency = 1;
-sampling_frequency = 2000;
+sampling_frequency = 1024;
 adc_prescaler = 16;
 sample_amount = 4096;
 
