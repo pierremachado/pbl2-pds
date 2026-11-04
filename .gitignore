@@ -1,1 +1,5 @@
-uart_plotter/.venv
+.vscode
+docs/reports
+docs/assignments
+tools/python/.venv
+octave-workspace
