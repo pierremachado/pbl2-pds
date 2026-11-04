@@ -7,8 +7,11 @@
 
 #define BAUD 115200UL
 #define MAX_BUFFER_SIZE 6144U
-#define MIN_SAMPLE_RATE 31U
+// fs > 512*f, com f >= 1 Hz e fs inteiro
+#define MIN_SAMPLE_RATE 513U
 #define DISCARDED_READS 16U
+// margem em ciclos de CPU para entrada, saída e trabalho da ISR fora do ADC
+#define ISR_BUDGET_CYCLES 256UL
 
 // códigos de status enviados ao Octave antes do bloco de amostras
 #define STATUS_OK          0x00U
@@ -102,7 +105,7 @@ void ADC_SetPrescaler(uint8_t prescaler) {
     case 32:  adps_bits = (1 << ADPS2) | (1 << ADPS0); break;
     case 64:  adps_bits = (1 << ADPS2) | (1 << ADPS1); break;
     case 128: adps_bits = (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); break;
-    default:  adps_bits = (1 << ADPS2); prescaler = 16; break;
+    default:  return;  // o comando já deve ter sido rejeitado
   }
 
   ADCSRA = (ADCSRA & ~((1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0))) | adps_bits;
@@ -113,13 +116,40 @@ void ADC_SetPrescaler(uint8_t prescaler) {
   }
 }
 
-void Timer1_Start(uint16_t sample_rate) {
+// retorna 1 para parâmetros válidos e 0 para erro, sem usar bool.
+uint8_t Capture_Validate(uint8_t prescaler, uint16_t sample_rate,
+                         uint16_t num_samples, uint16_t *timer_top) {
+  if ((prescaler != 16 && prescaler != 32 &&
+       prescaler != 64 && prescaler != 128) ||
+      sample_rate < MIN_SAMPLE_RATE ||
+      num_samples == 0 || num_samples > MAX_BUFFER_SIZE) {
+    return 0;
+  }
+
+  const uint32_t ticks =
+      (F_CPU + 4UL * sample_rate) / (8UL * sample_rate);
+  if (ticks == 0 || ticks > 65536UL) {
+    return 0;
+  }
+
+  // 13 clocks por conversão normal + até 1 para alinhamento do início
+  // a primeira conversão (25 clocks) já foi descartada antes da captura
+  const uint32_t required_cycles = 14UL * prescaler + ISR_BUDGET_CYCLES;
+  if (ticks * 8UL <= required_cycles) {
+    return 0;
+  }
+
+  *timer_top = (uint16_t)(ticks - 1UL);
+  return 1;
+}
+
+void Timer1_Start(uint16_t timer_top) {
   TCCR1A = 0;
   TCCR1B = 0;
   TCNT1 = 0;
 
-  // período da amostragem com arredondamento para o inteiro mais próximo (prescaler 8)
-  OCR1A = (uint16_t)(((F_CPU + (4UL * sample_rate)) / (8UL * sample_rate)) - 1UL);
+  // período previamente arredondado e validado, com prescaler 8
+  OCR1A = timer_top;
 
   // limpa interrupção pendente
   TIFR1 = (1 << OCF1A);
@@ -131,7 +161,7 @@ void Timer1_Start(uint16_t sample_rate) {
   TCCR1B = (1 << WGM12) | (1 << CS11);
 }
 
-// Executada a cada período de amostragem (sem concorrência da UART)
+// executada a cada período de amostragem (sem concorrência da UART)
 ISR(TIMER1_COMPA_vect) {
   uint8_t sample = ADC_Read();
 
@@ -139,8 +169,6 @@ ISR(TIMER1_COMPA_vect) {
   sampling_buffer[idx++] = sample;
   write_idx = idx;
 
-  // se OCF1A já disparou novamente durante a conversão ou gravação na RAM,
-  // o tempo de execução superou o período de amostragem (perda de sincronismo)
   if (TIFR1 & (1 << OCF1A)) {
       TIMSK1 &= ~(1 << OCIE1A);
       TCCR1B = 0;
@@ -158,6 +186,8 @@ ISR(TIMER1_COMPA_vect) {
 }
 
 void setup(void) {
+  // cli(): limpa o bit I de SREG, bloqueando globalmente as interrupções
+  // os periféricos continuam funcionando e podem acumular flags pendentes
   cli();
   TIMSK0 = 0;  // desabilita o Timer0 do Arduino (millis) para evitar jitter na amostragem
   ADC_Init(0);
@@ -167,11 +197,12 @@ void setup(void) {
     ADC_Read();
   }
 
+  // sei(): seta I em SREG; permite interrupções habilitadas nos periféricos
   sei();
 }
 
 void loop(void) {
-  // 1. Aguarda pacote de 5 bytes do Octave:
+  // aguarda pacote de 5 bytes do Octave:
   //    - 1 byte (uint8):   prescaler do ADC (16, 32, 64 ou 128)
   //    - 2 bytes (uint16): frequência de amostragem fs em Hz
   //    - 2 bytes (uint16): quantidade de amostras a capturar
@@ -179,32 +210,35 @@ void loop(void) {
   uint16_t sample_rate = UART0_Receive16();
   uint16_t num_samples = UART0_Receive16();
 
-  if (sample_rate < MIN_SAMPLE_RATE || num_samples == 0 || num_samples > MAX_BUFFER_SIZE) {
+  uint16_t timer_top;
+  if (!Capture_Validate(prescaler, sample_rate, num_samples, &timer_top)) {
       UART0_Transmit(STATUS_ERR_PARAM);
       return;
   }
 
-  // 2. Atualiza o prescaler (se mudou, descarta leituras iniciais para estabilizar)
+  // atualiza o prescaler (se mudou, descarta leituras iniciais para estabilizar)
   ADC_SetPrescaler(prescaler);
 
-  // 3. Captura o bloco em RAM com a UART silenciosa (zero jitter)
+  // captura em RAM sem transmissão UART
   target_samples = num_samples;
   write_idx = 0;
   capture_error = 0;
   capture_done = 0;
-  asm volatile("" ::: "memory");
-  Timer1_Start(sample_rate);
 
+  asm volatile("" ::: "memory");
+
+  Timer1_Start(timer_top);
   while (!capture_done);
+
   asm volatile("" ::: "memory");
 
-  // 4. Se houve perda (T_conv > T_s), notifica erro imediatamente ao Octave
+  // se detectou atraso da ISR, notifica erro ao script
   if (capture_error) {
       UART0_Transmit(STATUS_ERR_OVERRUN);
       return;
   }
 
-  // 5. Envia byte de status OK seguido do bloco completo pela UART
+  // envia byte de status OK seguido do bloco completo pela UART
   UART0_Transmit(STATUS_OK);
   for (uint16_t i = 0; i < num_samples; i++) {
       UART0_Transmit(sampling_buffer[i]);

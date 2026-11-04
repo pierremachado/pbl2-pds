@@ -12,6 +12,35 @@ sampling_frequency = 2000;
 adc_prescaler = 16;
 sample_amount = 4096;
 
+% Valida antes das conversões para uint8/uint16 e antes de abrir a serial.
+% O firmware recebe fs, prescaler e N; a frequência do sinal só existe aqui.
+if ~isfinite(signal_frequency) || signal_frequency < 1
+    error("A frequência do sinal deve ser finita e >= 1 Hz.");
+end
+if ~isfinite(sampling_frequency) || sampling_frequency ~= fix(sampling_frequency) ...
+        || sampling_frequency < 513 || sampling_frequency > 65535
+    error("fs deve ser um inteiro entre 513 e 65535 Hz.");
+end
+if ~any(adc_prescaler == [16, 32, 64, 128])
+    error("Prescaler do ADC inválido: use 16, 32, 64 ou 128.");
+end
+if ~isfinite(sample_amount) || sample_amount ~= fix(sample_amount) ...
+        || sample_amount < 1 || sample_amount > 6144
+    error("A quantidade de amostras deve ser um inteiro entre 1 e 6144.");
+end
+
+% Mesmo arredondamento do Timer1 no firmware, para CPU nominal de 16 MHz.
+timer_ticks = floor(16000000 / (8 * sampling_frequency) + 0.5);
+actual_sampling_frequency = 16000000 / (8 * timer_ticks);
+if sampling_frequency <= 512 * signal_frequency ...
+        || actual_sampling_frequency <= 512 * signal_frequency
+    error("fs solicitada e efetiva devem ser estritamente maiores que 512*f.");
+end
+% Mesmo orçamento conservador do firmware: conversão/alinhamento + ISR.
+if 8 * timer_ticks <= 14 * adc_prescaler + 256
+    error("fs excede o orçamento de tempo do ADC/ISR para este prescaler.");
+end
+
 config_packet = [uint8(adc_prescaler), ...
                  typecast(uint16(sampling_frequency), "uint8"), ...
                  typecast(uint16(sample_amount), "uint8")];
@@ -19,6 +48,7 @@ config_packet = [uint8(adc_prescaler), ...
 % --- ABERTURA DA PORTA SERIAL ---
 disp("Conectando à porta serial...");
 s = serial(serial_port, baud_rate);
+% fs > 512 Hz: até 6144 amostras levam menos de 12 s, mais ~0,54 s de envio.
 set(s, 'timeout', 50);
 pause(2);
 
@@ -34,8 +64,8 @@ plot_handle = stairs(ax, 0:(sample_amount - 1), zeros(sample_amount, 1), "linewi
 trigger_line = plot(ax, [0, sample_amount - 1], [128, 128], "--r", "linewidth", 1);
 hold(ax, "off");
 grid(ax, "on");
-title(ax, sprintf("Osciloscópio Digital - ATmega2560 (fs = %d Hz, Prescaler = %d)", ...
-                  sampling_frequency, adc_prescaler));
+title(ax, sprintf("Osciloscópio Digital - ATmega2560 (fs efetiva = %.3f Hz, Prescaler = %d)", ...
+                  actual_sampling_frequency, adc_prescaler));
 xlabel(ax, "Índice da Amostra");
 ylabel(ax, "Nível Digital (0 a 255)");
 
@@ -95,7 +125,7 @@ while ishandle(fig)
             elseif status == 1
                 disp("Parâmetros inválidos reportados pelo Arduino (STATUS_ERR_PARAM)! Quadro descartado.");
             elseif status == 2
-                disp("Perda de sincronismo (T_conv > T_s) detectada pelo Arduino! Quadro descartado.");
+                disp("Perda de sincronismo (atraso da ISR) detectada pelo Arduino! Quadro descartado.");
             else
                 printf("Erro desconhecido recebido (status = %d)! Quadro descartado.\n", status);
             end
