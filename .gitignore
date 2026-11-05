@@ -1,6 +1,0 @@
-.gitignore
-.vscode
-docs/table_reports
-docs/assignments
-tools/python/.venv
-octave-workspace
