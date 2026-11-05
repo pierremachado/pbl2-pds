@@ -58,7 +58,6 @@ tools/octave/outputs/                # Gráficos e métricas exportadas
 
 data/oscilloscope/                   # Registros de bancada (.BMP)
 docs/datasheets/                     # Documentação do hardware
-docs/table_reports/                  # Relatórios de mesa das sessões tutoriais
 docs/presentation/                   # Apresentação em LaTeX/Beamer
 docs/reports/relatorio_tecnico.md    # Relatório técnico em Markdown
 docs/reports/relatorio_tecnico.html  # Fundamentação e resultados completos (HTML)
