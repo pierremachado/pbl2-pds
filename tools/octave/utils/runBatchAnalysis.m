@@ -1,0 +1,57 @@
+function results = runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_MV, save_updated_mat)
+    % =========================================================================
+    % RUNBATCHANALYSIS - Processa todos os .mat de /data, gera CSV e gráficos
+    % =========================================================================
+
+    n_files = numel(mat_files);
+    printf("========================================================================================================================\n");
+    printf("INICIANDO ANÁLISE EM LOTE DE %d ARQUIVOS EM: %s (Vref = %.2f V | 1 LSB = %.1f mV)\n", ...
+           n_files, data_dir, VREF, LSB_MV);
+    printf("========================================================================================================================\n");
+    printf("%-31s | %-4s | %7s | %6s | %6s | %5s | %6s | %6s | %5s | %5s | %5s | %5s | %4s\n", ...
+           "Arquivo", "Tipo", "fs(Hz)", "f(Hz)", "T(am)", "RMSE", "RMSEin", "MAE", "Offs", "Gain", "DR(dB)", "ENOBi", "Miss");
+    printf("------------------------------------------------------------------------------------------------------------------------\n");
+
+    results = cell(n_files, 1);
+    csv_path = fullfile(output_dir, "adc_summary_metrics.csv");
+    fid = fopen(csv_path, "w");
+    fprintf(fid, "file_name,was_full_format,sampling_frequency,actual_sampling_frequency,adc_prescaler,sample_amount,freq_hz,period_samples,num_full_cycles,s_min,s_max,s_vpp,offset_error_lsb,offset_error_mv,offset_error_pct,gain_error_lsb,gain_error_mv,gain_error_pct,measured_gain,rmse_lsb,rmse_mv,rmse_pct_fsr,rmse_intrinsic_lsb,rmse_intrinsic_mv,mae_lsb,mae_mv,mae_pct_fsr,max_abs_err_lsb,max_abs_err_mv,mape_signal_pct,dnl_min,dnl_max,dnl_rms,inl_min,inl_max,inl_rms,missing_codes,is_monotonic,dr_db,dr_tri_db,dr_quant_db,sinad_tri_total_db,sinad_tri_intrin_db,enob_tri_total_bits,enob_tri_intrin_bits,sfdr_tri_dbc,noise_floor_rms_lsb\n");
+
+    for k = 1:n_files
+        fpath = fullfile(data_dir, mat_files(k).name);
+        m = analyzeSingleCapture(fpath, VREF, LSB_MV, "opt");
+        results{k} = m;
+
+        if save_updated_mat
+            saveEnrichedMat(fpath, m);
+        end
+
+        printf("%-31s | %-4s | %7.1f | %6.2f | %6.1f | %5.2f | %6.2f | %6.2f | %+5.2f | %+5.2f | %6.1f | %5.2f | %4d\n", ...
+               m.file_name, ifelse(m.was_full_format, "FULL", "SIMP"), ...
+               m.actual_sampling_frequency, m.freq_hz, m.period_samples, ...
+               m.rmse_lsb, m.rmse_intrinsic_lsb, m.mae_lsb, ...
+               m.offset_error_lsb, m.gain_error_lsb, ...
+               m.dr_db, m.enob_tri_intrin_bits, m.missing_codes);
+
+        fprintf(fid, "%s,%d,%.1f,%.2f,%d,%d,%.4f,%.2f,%d,%.0f,%.0f,%.0f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.4f\n", ...
+                m.file_name, m.was_full_format, m.sampling_frequency, m.actual_sampling_frequency, ...
+                m.adc_prescaler, m.sample_amount, m.freq_hz, m.period_samples, m.num_full_cycles, ...
+                m.s_min, m.s_max, m.s_vpp, m.offset_error_lsb, m.offset_error_mv, m.offset_error_pct, ...
+                m.gain_error_lsb, m.gain_error_mv, m.gain_error_pct, m.measured_gain, ...
+                m.rmse_lsb, m.rmse_mv, m.rmse_pct_fsr, m.rmse_intrinsic_lsb, m.rmse_intrinsic_mv, ...
+                m.mae_lsb, m.mae_mv, m.mae_pct_fsr, m.max_abs_err_lsb, m.max_abs_err_mv, m.mape_signal_pct, ...
+                m.dnl_min, m.dnl_max, m.dnl_rms, m.inl_min, m.inl_max, m.inl_rms, ...
+                m.missing_codes, m.is_monotonic, m.dr_db, m.dr_tri_db, m.dr_quant_db, ...
+                m.sinad_tri_total_db, m.sinad_tri_intrin_db, m.enob_tri_total_bits, m.enob_tri_intrin_bits, ...
+                m.sfdr_tri_dbc, m.noise_floor_rms_lsb);
+    end
+    fclose(fid);
+    printf("------------------------------------------------------------------------------------------------------------------------\n");
+    printf("Tabela CSV salva em: %s\n", csv_path);
+
+    if ~isempty(available_graphics_toolkits())
+        plotComparativeFigures(results, output_dir, VREF, LSB_MV);
+    else
+        printf("Aviso: Nenhum toolkit gráfico ativo nesta sessão de terminal sem DISPLAY. Execute adc_analyzer('batch') na GUI do Octave para exportar os PNGs.\n");
+    end
+end

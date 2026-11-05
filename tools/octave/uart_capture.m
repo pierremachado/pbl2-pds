@@ -5,15 +5,23 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
     % Uso autônomo (sem argumentos no terminal ou botão Run):
     %   uart_capture
     %   -> Usa os parâmetros default abaixo, abre a serial, captura 4096
-    %      amostras, salva automaticamente em /data/sample_YYYYMMDD_HHMMSS.mat
-    %      sem pedir input no terminal e plota o sinal capturado.
+    %      amostras, calcula o período/frequência medidos, salva automaticamente
+    %      em /data/sample_YYYYMMDD_HHMMSS.mat e plota o sinal capturado.
     %
-    % Uso integrado (chamado pelo uart_oscilloscope_panel.m):
-    %   [samples, fs_eff, status] = uart_capture(fs, prescaler, N, s, false, false)
+    % Uso integrado (chamado pelo uart_oscilloscope.m):
+    %   [samples, fs_eff, status, file_path] = uart_capture(fs, prescaler, N, s, auto_save, false)
     %   -> Reutiliza a porta serial aberta 's' para captura rápida em tempo real.
     % =========================================================================
 
     pkg load instrument-control;
+
+    % --- DIRETÓRIOS E PATHS DE MÓDULOS ---
+    base_dir = fileparts(mfilename("fullpath"));
+    if isempty(base_dir)
+        base_dir = pwd();
+    end
+    addpath(genpath(fullfile(base_dir, "src")));
+    output_dir = fullfile(base_dir, "data");
 
     % --- PARÂMETROS DEFAULT ---
     default_serial_port        = "/dev/ttyUSB0";
@@ -42,13 +50,6 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
         % Plota automaticamente quando executado de forma autônoma sem saídas
         show_plot = (nargout == 0) && (nargin < 4);
     end
-
-    % --- DIRETÓRIO DE SAÍDA (/data) ---
-    base_dir = fileparts(mfilename("fullpath"));
-    if isempty(base_dir)
-        base_dir = pwd();
-    end
-    output_dir = fullfile(base_dir, "data");
 
     % --- VALIDAÇÃO DE PARÂMETROS DE HARDWARE E FIRMWARE ---
     if ~isfinite(sampling_frequency) || sampling_frequency ~= fix(sampling_frequency) ...
@@ -129,8 +130,17 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
         end
 
         samples = double(raw_samples(:));
+
+        % --- CÁLCULO ESSENCIAL DO PERÍODO E FREQUÊNCIA DO SINAL ---
+        trig = detectSignalTrigger(samples);
+        per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, "trig");
+        period_samples   = per.period_samples;
+        period_sec       = per.period_sec;
+        signal_frequency = per.signal_frequency;
+
         if own_serial
-            disp("Leitura concluída com sucesso!");
+            printf("Leitura concluída! f = %.2f Hz | T = %.2f ms (%.1f am/ciclo)\n", ...
+                   signal_frequency, period_sec * 1e3, period_samples);
         end
 
         % --- SALVAMENTO AUTOMÁTICO EM /data (SEM INPUT NO TERMINAL) ---
@@ -142,7 +152,8 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
             file_path = fullfile(output_dir, file_name);
             save("-v7", file_path, ...
                  "samples", "sampling_frequency", "actual_sampling_frequency", ...
-                 "adc_prescaler", "sample_amount");
+                 "adc_prescaler", "sample_amount", ...
+                 "signal_frequency", "period_samples", "period_sec");
             printf("Amostra salva automaticamente em: %s\n", file_path);
         end
 
@@ -151,8 +162,8 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
             figure("name", "Captura UART - ATmega2560", "numbertitle", "off");
             stairs(0:(sample_amount - 1), samples);
             grid on;
-            title(sprintf("Sinal Adquirido via ADC (fs efetiva = %.1f Hz, Prescaler = %d)", ...
-                          actual_sampling_frequency, adc_prescaler));
+            title(sprintf("Sinal Adquirido via ADC (f = %.2f Hz | fs = %.1f Hz | Prescaler = %d)", ...
+                          signal_frequency, actual_sampling_frequency, adc_prescaler));
             xlabel(sprintf("Índice da Amostra (0 a %d)", sample_amount - 1));
             ylabel("Nível Digital de Quantização (0 a 255)");
             ylim([-10, 265]);
