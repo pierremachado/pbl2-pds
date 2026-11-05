@@ -1,0 +1,446 @@
+\documentclass{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{pgfplots}
+\usepackage{tikz}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{array}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+
+
+\title{Conversão Analógica-Digital}
+
+\author{\textbf{Pierre Machado} \and \textbf{Pedro Fernandes}}
+
+\institute{\textbf{UEFS}}
+
+\date{06 de Novembro de 2026}
+
+\AtBeginSection[]
+{
+  \begin{frame}
+    \frametitle{Sumário}\tableofcontents[currentsection]
+  \end{frame}
+}
+
+
+\begin{document}
+
+%The next statement creates the title page.
+\frame{\titlepage}
+
+
+%---------------------------------------------------------
+%This block of code is for the table of contents after
+%the title page
+\begin{frame}
+\frametitle{Sumário}
+\tableofcontents
+\end{frame}
+%---------------------------------------------------------
+
+
+\section{Introdução}
+\subsection{Problema Proposto}
+
+\begin{frame}{Problema Proposto}
+
+\begin{columns}
+
+    \column{0.5\textwidth}
+
+    \begin{itemize}
+        \item Compreender o processo de conversão A/D através do ATmega2560;
+        \item Determinar as especificações necessárias para representar o sinal analógico, considerando as limitações do processo de conversão A/D e os erros inerentes;
+        \item Avaliar os erros estáticos do conversor (offset, ganho, DNL, INL e monotonicidade) e suas características dinâmicas (faixa dinâmica, tempo de conversão e taxa máxima de amostragem).
+    \end{itemize}
+
+    \column{0.5\textwidth}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{Imagens/1.png}
+        \caption{Sinais de entrada e saída representativos para o sample-and-hold. Adaptado de: (Oppenheim, 2013).}
+        \label{fig1}
+    \end{figure}
+\end{columns}
+
+\end{frame}
+
+\subsection{ADC e Quantização}
+
+\begin{frame}{ADC}
+
+    \begin{columns}
+    
+        \column{0.5\textwidth}
+    
+        \begin{itemize}
+            \item O conversor analógico-digital (A/D) é um dispositivo responsável por converter sinais analógicos em representações digitais;
+            \item O processo de conversão A/D é, geralmente, avaliado em três etapas:
+            \begin{enumerate}
+                \item Amostragem: discretização do sinal no tempo em consideração do critério de Nyquist ($f_s > 2 \cdot f_M$);
+                \item Quantização: discretização do sinal na amplitude;
+                \item Codificação: representação dos níveis quantizados por \textit{bits}
+            \end{enumerate}
+        \end{itemize}
+    
+        \column{0.5\textwidth}
+    
+        \begin{figure}
+            \centering
+            \includegraphics[width=\linewidth]{Imagens/2.png}
+            \caption{Processamento em tempo discreto de sinais de tempo contínuo. Adaptado de: (Oppenheim, 2013).}
+            \label{fig2}
+        \end{figure}
+    \end{columns}
+    
+\end{frame}
+
+\begin{frame}{Quantização}
+
+    \begin{block}{Definição}
+        A quantização consiste em transformar os valores contínuos de amplitude de um sinal amostrado em um conjunto finito de níveis discretos. Os níveis, $L$, são definidos pela quantidade de \textit{bits} $N$.
+
+        \begin{equation}
+            L = 2^N
+        \end{equation}
+
+        Os níveis são utilizados para representar aproximadamente valores da tensão de referência a ser avaliada. O menor intervalo de amplitude é denominado \textbf{Least Significant Bit} (\textit{LSB}), definido da seguinte forma:
+
+        \begin{equation}
+            \Delta = \frac{V_{ref}}{L}
+        \end{equation}
+
+        Portanto, $\Delta$ é o menor incremento de amplitude que o conversor A/D consegue distinguir na escala de quantização.
+    \end{block}
+    
+\end{frame}
+
+\begin{frame}{Erro de Quantização}
+
+    \begin{alertblock}{Erro de Quantização}
+        Como os valores analógicos são aproximados por níveis, há erro entre o sinal original e o sinal representado, conhecido como erro de quantização, definido abaixo:
+
+        \begin{equation}
+            e_q = x - x_q
+        \end{equation}
+
+        Para quantização ideal, o erro deve ser de tal forma que o nível adotado seja o mais próximo da tensão de referência. Como a distância máxima para arrendondamento é metade do \textit{LSB}, a quantização ideal possui a seguinte faixa de erro:
+
+        \begin{equation}
+            -\frac{\Delta}{2} \leq e_q \leq \frac{\Delta}{2}
+        \end{equation}
+    \end{alertblock}
+    
+\end{frame}
+
+\begin{frame}{Processos de Conversão A/D}
+
+    \begin{tabular}{|>{\centering\arraybackslash}m{2.5cm}|
+                >{\centering\arraybackslash}m{8.5cm}|}
+        \hline
+        \textbf{Método} & \textbf{Princípio de funcionamento} \\
+        \hline
+        \textbf{SAR} &
+        Realiza comparações sucessivas entre o sinal de entrada e uma tensão de referência, determinando os bits da saída do mais significativo ao menos significativo. \\
+        \hline
+        \textbf{Flash} &
+        Utiliza múltiplos comparadores em paralelo para comparar simultaneamente o sinal de entrada com diferentes níveis de referência. \\
+        \hline
+        \textbf{Sigma-Delta} &
+        Utiliza sobreamostragem, integração e realimentação para realizar a conversão, empregando modelagem de ruído para aumentar a resolução. \\
+        \hline
+    \end{tabular}
+
+    \begin{exampleblock}{Em relação ao Problema Proposto}
+        O microcontrolador ATmega2560 utiliza o método SAR em seu conversor A/D.
+    \end{exampleblock}
+    
+\end{frame}
+
+\subsection{SAR}
+
+\begin{frame}{SAR}
+
+\begin{columns}
+
+    \column{0.50\textwidth}
+
+    \begin{enumerate}
+        \item Sample and Hold: Captura a tensão de entrada e mantém seu valor constante durante a conversão.
+        \item Comparador: Compara a tensão de entrada com a tensão de referência interna.
+        \item D/A interno: Converte o código binário provisório em uma tensão analógica.
+        \item Registrador SAR: Armazena e determina os bits da conversão.
+        \item Controle: Coordena as etapas de comparação e atualização dos bits.
+    \end{enumerate}
+
+    \column{0.5\textwidth}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{Imagens/3.png}
+        \caption{Conversor A/D pelo método de Aproximações Sucessivas. Adaptado de: (Elliott Smith, 2015).}
+        \label{fig3}
+    \end{figure}
+
+    
+\end{columns}
+    
+\end{frame}
+
+\subsection{Análise Espectral: DFT e FFT}
+
+\begin{frame}{Transformada Discreta de Fourier}
+
+    \begin{block}{DTFS}
+        Considere o sinal discreto $x[n]$ com período $N$, isto é, $x[n] = x[n + N]$. $x[n]$ pode ser representado pela série de Fourier a tempo discreto.
+
+        \begin{equation}
+            x[n] = \sum_{k=0}^{N-1} a_k e^{j\frac{2\pi}{N}kn} \;\underset{\text{Síntese}}{\overset{\text{Análise}}{\rightleftharpoons}}\; a_k = \frac{1}{N}\sum_{n=0}^{N-1}x[n]e^{-j\frac{2\pi}{N}kn}
+        \end{equation}
+    \end{block}
+
+    \begin{block}{DFT}
+        DFT surge a partir da DTFS quando se considera um conjunto finito de $N$ amostras de um sinal e construímos sua extensão periódica.
+
+        Defina-se os coeficientes da DFT como $X[k]=Na_k$.
+        
+        \begin{equation}
+            X[k]=\sum_{n=0}^{N-1}x[n]e^{-j\frac{2\pi}{N}kn}
+        \end{equation}
+        
+    \end{block}
+    
+\end{frame}
+
+\begin{frame}{Transformada Rápida de Fourier}
+
+    \begin{block}{Algoritmo}
+        A FFT é um algoritmo utilizado para calcular a DFT rapidamente. Ao avaliar a representação da DFT, é possível observar que se precisa calcular $N$ parcelas de $N$ valores possível de $k$. A complexidade algorítmica é de $O(N^2)$. Para tornar a operação mais rápida, utiliza-se a técnica de dividir e conquistar. Representa-se $X[k]$ em somatórios de índices pares e ímpares.
+
+        \begin{equation}
+            X[k] = \underbrace{\sum_{r=0}^{\frac{N}{2}-1}x[2r]e^{-j\frac{2\pi}{N}k(2r)}}_{\text{Índices pares}} + \underbrace{\sum_{r=0}^{\frac{N}{2}-1}x[2r+1]e^{-j\frac{2\pi}{N}k(2r+1)}}_{\text{Índices ímpares}}
+        \end{equation}
+
+        Repete-se o processo. Por relação de recorrência, a complexidade algorítmica é reduzida para $O(N \cdot log_2(N))$
+    \end{block}
+    
+\end{frame}
+
+\section{Desenvolvimento}
+
+\subsection{Avaliação Dinâmica}
+
+\begin{frame}{Faixa Dinâmica}
+    
+\end{frame}
+
+\begin{frame}{Tempo de Conversão}
+    
+\end{frame}
+
+\begin{frame}{Taxa de Amostragem Máxima}
+    
+\end{frame}
+
+\subsection{Captação e Transferência de Dados}
+
+\begin{frame}{Arquitetura e Registradores}
+    
+\end{frame}
+
+\begin{frame}{Transferência USB e UART}
+    
+\end{frame}
+
+\subsection{Pós-Aquisição e Análise}
+
+\section{Resultados e Discussões}
+
+\subsection{Offset}
+
+\begin{frame}{Caracterização (Offset)}
+
+\begin{columns}
+
+    \column{0.45\linewidth}
+
+    \begin{exampleblock}{Caracterização}
+        O erro de offset é caracterizado por um deslocamento constante na curva de conversão do ADC. O erro de offset provoca um deslocamento na resposta do ADC.
+    \end{exampleblock}
+
+    \begin{alertblock}{Segundo o Datasheet}
+        Sob condição de avaliação do datasheet, o erro típico offset é $-2$ LSB.
+    \end{alertblock}
+
+    \column{0.50\linewidth}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{Imagens/4.png}
+        \caption{Caracterização do erro de Offset. Adaptado de: (ATMEL Corporation, 2015).}
+        \label{fig4}
+    \end{figure}
+    
+\end{columns}
+    
+\end{frame}
+
+\begin{frame}{Comparação e Avaliação (Offset)}
+    
+\end{frame}
+
+\subsection{Ganho}
+
+\begin{frame}{Caracterização (Ganho)}
+
+\begin{columns}
+
+    \column{0.45\linewidth}
+
+    \begin{exampleblock}{Caracterização}
+        O erro de ganho ocorre quando o conversor apresenta uma variação proporcional entre o valor esperado e o valor efetivamente convertido, isto é, inclinação diferente da ideal na relação entre entrada e saída.
+    \end{exampleblock}
+
+    \begin{alertblock}{Segundo o Datasheet}
+        \begin{itemize}
+            Sob condição de avaliação do datasheet, o erro típico de ganho é $2$ LSB.
+        \end{itemize}
+    \end{alertblock}
+
+    \column{0.50\linewidth}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{Imagens/5.png}
+        \caption{Caracterização do erro de Ganho. Adaptado de: (ATMEL Corporation, 2015).}
+        \label{fig5}
+    \end{figure}
+    
+\end{columns}
+    
+\end{frame}
+
+\begin{frame}{Comparação e Avaliação}
+    
+\end{frame}
+
+\subsection{Não Linearidade Integral (INL)}
+
+\begin{frame}{Caracterização (INL)}
+
+\begin{columns}
+
+    \column{0.45\linewidth}
+
+    \begin{exampleblock}{Caracterização}
+        O erro de INL é caracterizado pelo desvio entre a curva real de conversão do dispositivo e a curva ideal de referência.
+        A INL representa a máxima diferença entre a resposta real do conversor e a resposta ideal, considerando todos os pontos de conversão.
+    \end{exampleblock}
+
+    \begin{alertblock}{Segundo o Datasheet}
+        Sob condição de avaliação do datasheet, o erro típico de INL é $1.25$ LSB.
+    \end{alertblock}
+
+    \column{0.50\linewidth}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{Imagens/6.png}
+        \caption{Caracterização do erro de INL. Adaptado de: (ATMEL Corporation, 2015).}
+        \label{fig6}
+    \end{figure}
+    
+\end{columns}
+    
+\end{frame}
+
+\begin{frame}{Comparação e Avaliação}
+    
+\end{frame}
+
+\subsection{Não Linearidade Diferencial (DNL)}
+
+\begin{frame}{Caracterização (DNL)}
+
+\begin{columns}
+
+    \column{0.45\linewidth}
+
+    \begin{exampleblock}{Caracterização}
+        O erro de DNL é caracterizado pela diferença entre o tamanho real de cada intervalo de conversão e o tamanho ideal.
+    \end{exampleblock}
+
+    \begin{alertblock}{Avaliação de DNL}
+        \begin{itemize}
+            \item DNL = 0;
+            \item DNL positivo;
+            \item DNL negativo;
+            \item DNL = -1 LSB
+            \item Sob condição de avaliação do datasheet, o erro típico de DNL é $0.5$ LSB.
+        \end{itemize}
+    \end{alertblock}
+
+    \column{0.50\linewidth}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{Imagens/7.png}
+        \caption{Caracterização do erro de DNL. Adaptado de: (ATMEL Corporation, 2015).}
+        \label{fig7}
+    \end{figure}
+    
+\end{columns}
+    
+\end{frame}
+
+\begin{frame}{Comparação e Avaliação}
+    
+\end{frame}
+
+\subsection{Monotonicidade}
+
+\begin{frame}{Caracterização}
+    
+\end{frame}
+
+\begin{frame}{Comparação e Avaliação}
+    
+\end{frame}
+
+\section{Referências}
+
+\begin{frame}{Referências}
+    \footnotesize
+
+    \begin{thebibliography}{99}
+
+    \bibitem{oppenheim-sinais}
+    OPPENHEIM, Alan V.; WILLSKY, Alan S.; NAWAB, S. Hamid.
+    \textit{Sinais e sistemas}.
+    2. ed. São Paulo: Pearson Prentice Hall, 2010.
+
+    \bibitem{oppenheim-processamento}
+    OPPENHEIM, Alan V.; SCHAFER, Ronald W.; BUCK, John R.
+    \textit{Processamento em tempo discreto de sinais}.
+    2. ed. São Paulo: Pearson Prentice Hall, 2009.
+
+    \bibitem{allaboutcircuits}
+    Elliott Smith.
+    \textit{Understanding the Successive Approximation Register ADC}.
+    Disponível em:
+    \url{https://www.allaboutcircuits.com/technical-articles/understanding-analog-to-digital-converters-the-successive-approximation-reg/}.
+    Acesso em: 1 nov. 2026.
+
+    \bibitem{atmega2560} ATMEL Corporation. \textit{ATmega2560: 8-bit Microcontroller with 256K Bytes In-System Programmable Flash}. Disponível em: \url{https://www.alldatasheet.com/datasheet-pdf/view/107092/ATMEL/ATMEGA2560.html}. Acesso em: 4 nov. 2026.
+
+    \end{thebibliography}
+\end{frame}
+
+\section{Considerações Finais}
+
+\end{document}
