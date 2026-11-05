@@ -20,7 +20,7 @@ Projeto de implementação em nível de registradores, aquisição determinísti
 
 ## 1. Arquitetura e Estrutura do Repositório
 
-O sistema foi projetado seguindo a arquitetura **Store-and-Forward** (Aquisição em Bloco Determinística em RAM seguida de Transmissão Serial em Lote), eliminando completamente o *jitter* de amostragem e os gargalos de taxa de transmissão da UART durante a conversão A/D:
+O sistema foi projetado seguindo a arquitetura **Store-and-Forward** (Aquisição em Bloco Determinística em RAM seguida de Transmissão Serial em Lote), minimizando o jitter de amostragem, eliminando a interferência direta da transmissão serial durante a aquisição e os gargalos de taxa de transmissão da UART durante a conversão A/D:
 
 ```text
 pbl2-pds/
