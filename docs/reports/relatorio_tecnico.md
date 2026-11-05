@@ -9,8 +9,8 @@ Projeto de implementação em nível de registradores, aquisição determinísti
 1. [Arquitetura e Estrutura do Repositório](#1-arquitetura-e-estrutura-do-repositório)
 2. [Fundamentação Teórica e Especificações do Datasheet (ATmega2560)](#2-fundamentação-teórica-e-especificações-do-datasheet-atmega2560)
 3. [Cálculos Teóricos vs. Práticos ($f_s$, $f_{\text{sinal}}$, UART U2X0, Buffer de 4096 Amostras e Firmware `.ino`)](#3-cálculos-teóricos-vs-práticos-f_s-f_textsinal-uart-u2x0-buffer-de-4096-amostras-e-firmware-ino)
-4. [Metodologia de Ensaio segundo o Padrão IEEE Std 1241](#4-metodologia-de-ensaio-segundo-o-padrão-ieee-std-1241)
-5. [Calibração com Osciloscópio de Bancada: O Verdadeiro $V_{\text{ref}}$ e o Erro de Ganho/Offset](#5-calibração-com-osciloscópio-de-bancada-o-verdadeiro-v_textref-e-o-erro-de-ganhooffset)
+4. [Metodologia de Ensaio com Referência à IEEE Std 1241](#4-metodologia-de-ensaio-com-referência-à-ieee-std-1241)
+5. [Calibração com Osciloscópio de Bancada: Estimativa de $V_{\text{ref}}$ e o Erro de Ganho/Offset](#5-calibração-com-osciloscópio-de-bancada-estimativa-de-v_textref-e-o-erro-de-ganhooffset)
 6. [Organização dos Dados e Resultados Experimentais](#6-organização-dos-dados-e-resultados-experimentais)
 7. [Principais Conclusões Físicas e de Engenharia](#7-principais-conclusões-físicas-e-de-engenharia)
 8. [Como Executar os Scripts no GNU Octave](#8-como-executar-os-scripts-no-gnu-octave)
@@ -80,7 +80,9 @@ pbl2-pds/
 O Problema 02 exige determinar a quantidade mínima de bits $n$ para que o erro máximo de quantização não ultrapasse $0.39\%$ do fundo de escala ($FSR = V_{\text{ref}}$). Sendo o passo de quantização $\Delta = q = \frac{V_{\text{ref}}}{2^n}$:
 
 1. **Critério do Degrau de Quantização (Truncamento: $Q(x) = \Delta \lfloor x/\Delta \rfloor$):**
-   $$\frac{E_{\max,\text{degrau}}}{V_{\text{ref}}} = \frac{\Delta}{V_{\text{ref}}} = \frac{1}{2^n} \le 0.0039 \implies 2^n \ge 256.41 \implies \mathbf{n = 8\text{ bits}} \quad \left(2^8 = 256\text{ níveis},\; \frac{1}{256} = \mathbf{0.3906\%\text{ FSR}}\right)$$
+   $$n = 8 \implies \frac{\Delta}{V_{\text{ref}}} = \frac{1}{256} = 0.00390625 \implies \frac{\Delta}{V_{\text{ref}}}\times 100\% = 0.390625\% \approx \mathbf{0.39\%\text{ FSR}}$$
+
+   O valor de 0,39% é considerado arredondado neste critério. Se o limite de 0,390000% for estrito para um degrau inteiro, são necessários 9 bits; pelo critério de erro máximo de meio LSB abaixo, 8 bits atendem ao limite.
 2. **Critério do Erro Centrado de Meio LSB (Arredondamento: $Q(x) = \Delta \lfloor x/\Delta + 1/2 \rfloor$):**
    $$|e_q(x)| \le \frac{\Delta}{2} = \frac{V_{\text{ref}}}{2^{n+1}} \implies \frac{|e_q|_{\max}}{V_{\text{ref}}} = \pm\frac{1}{512} = \mathbf{\pm 0.1953\%\text{ FSR}} \quad (\text{excursão pico-a-pico de erro igual a } 1\text{ LSB} = 0.3906\%\text{ FSR})$$
 3. **Erro Quadrático Médio (EQM / RMSE Teórico de Quantização Uniforme):**
@@ -106,7 +108,7 @@ O conversor A/D interno do ATmega2560 utiliza a arquitetura de **Aproximações 
 | **Tempo de Conversão Normal** | $T_{\text{conv}}$ | — | **$13$** | — | $\text{ciclos ADC}$ | $13.0\text{ }\mu\text{s}$ com `prescaler = 16` ($f_{\text{ADC}} = 1\text{ MHz}$) |
 | **Tempo da 1ª Conversão (Aquecimento)** | $T_{\text{conv,1}}$ | — | **$25$** | — | $\text{ciclos ADC}$ | Descartada por `DISCARDED_READS = 16U` leituras prévias |
 | **Não-Linearidade Integral (INL)** | $\text{INL}$ | — | $0.5$ | — | $\text{LSB}_{10\text{b}}$ | Equivale a $\pm 0.125\text{ LSB}_{8\text{b}}$ típico em $f_{\text{ADC}} \le 200\text{ kHz}$ |
-| **Não-Linearidade Diferencial (DNL)** | $\text{DNL}$ | — | $0.25$ | — | $\text{LSB}_{10\text{b}}$ | Sem *missing codes* garantido pelo fabricante |
+| **Não-Linearidade Diferencial (DNL)** | $\text{DNL}$ | — | $0.25$ | — | $\text{LSB}_{10\text{b}}$ | Ausência de *missing codes* especificada nas condições de ensaio do fabricante |
 
 ---
 
@@ -182,7 +184,7 @@ Para que a captura cumpra simultaneamente (i) a visitação de todos os $256$ n�
    - **No Modo de Velocidade Dupla (`UCSR0A = (1 << U2X0)`, divisor $8$, implementado em `UART0_Init`):**
      $$\text{UBRR} = \left\lfloor \frac{F_{\text{CPU}}}{8 \cdot \text{BAUD}} \right\rfloor - 1 = \left\lfloor \frac{16\,000\,000}{8 \times 115200} \right\rfloor - 1 = \lfloor 17.361 \rfloor - 1 = \mathbf{16}$$
      $$\text{BAUD}_{\text{U2X0}} = \frac{16\,000\,000}{8 \times (16 + 1)} = \frac{16\,000\,000}{136} = \mathbf{117\,647.06\text{ bps}} \implies \text{Erro de Baud} = \mathbf{+2.12\%}$$
-     Reduzindo o divisor para 8, o erro cai para $+2.12\%$, perfeitamente compatível com o conversor USB-Serial ATmega16U2/CH340 da placa Arduino Mega 2560.
+     Reduzindo o divisor para 8, o erro cai para $+2.12\%$, compatível com a comunicação observada nos ensaios; a margem depende também do clock e do receptor USB-Serial utilizado.
 
 2. **Tempo por Byte, Limite de *Streaming* e Tempo de Envio do Bloco de $4096\text{ Amostras}$:**
    - No formato de quadro **8N1** (`UCSR0C = (1 << UCSZ01) | (1 << UCSZ00)`), cada byte transmitido ocupa **$10\text{ bits}$** na linha serial ($1\text{ start bit} + 8\text{ data bits} + 1\text{ stop bit}$):
@@ -207,19 +209,21 @@ O arquivo `adc_uart.ino` implementa seis mecanismos essenciais em nível de regi
 5. **Detecção Hardware de *Overrun* / Perda de Sincronismo (`if (TIFR1 & (1 << OCF1A))`):**
    Dentro da `ISR(TIMER1_COMPA_vect)`, imediatamente após concluir `ADC_Read()` e salvar no `sampling_buffer`, o código lê o registrador de flags `TIFR1`. Se o bit `OCF1A` já estiver em `1`, significa que um novo período do `Timer1` expirou antes de a ISR terminar. O firmware desliga imediatamente o timer e retorna `STATUS_ERR_OVERRUN (0x02)` ao Octave, descartando o lote corrompido.
 6. **Protocolo Binário de Controle de 5 Bytes e Barreiras de Memória (`asm volatile("" ::: "memory")`):**
-   O Octave envia `[prescaler (1B), fs_low (1B), fs_high (1B), N_low (1B), N_high (1B)]`. O uso de barreiras de memória em torno de `Timer1_Start` e `while (!capture_done)` garante que o compilador `avr-gcc` não reordene a inicialização de `write_idx = 0` nem faça *cache* em registradores das variáveis compartilhadas com a ISR.
+   O Octave envia `[prescaler (1B), fs_low (1B), fs_high (1B), N_low (1B), N_high (1B)]`. O uso de barreiras de memória em torno de `Timer1_Start` e `while (!capture_done)` busca impedir reordenações e reutilização de valores de memória nesses pontos; a temporização e o código gerado devem ser verificados na compilação utilizada.
 
 ---
 
-## 4. Metodologia de Ensaio segundo o Padrão IEEE Std 1241
+## 4. Metodologia de Ensaio com Referência à IEEE Std 1241
 
-A metodologia de pós-processamento implementada em `tools/octave/adc_analyzer.m` segue o padrão **IEEE Std 1241 (*IEEE Standard for Terminology and Test Methods for Analog-to-Digital Converters*)**:
+A metodologia de pós-processamento implementada em `tools/octave/adc_analyzer.m` utiliza conceitos de caracterização associados à **IEEE Std 1241 (*IEEE Standard for Terminology and Test Methods for Analog-to-Digital Converters*)**:
 
 ### 4.1. Aquisição por Registro em Bloco (*Data Record Acquisition*) e Pós-Processamento
 
 Segundo a Seção 5 da IEEE Std 1241, o ensaio de um ADC parte da coleta de um registro finito de $N$ amostras equiespaçadas $y(0), y(1), \dots, y(N-1)$ sob estímulo periódico conhecido. Armazenar os registros em arquivos `.mat` permite:
 - Aplicar **ajuste de mínimos quadrados de 4 parâmetros** (amplitude/ganho, offset, frequência/período e fase) sem restrição de tempo de execução de *loop* serial;
 - Auditar e reproduzir todas as métricas estáticas e dinâmicas offline a qualquer momento, mantendo o `uart_oscilloscope.m` dedicado à inspeção visual imediata na bancada.
+
+As métricas aqui apresentadas são estimativas experimentais adaptadas ao estímulo triangular, sem demonstração de conformidade integral com a norma. O termo “intrínseco”, mantido em nomes de campos e tabelas do analisador, designa o resíduo após ajuste: ele não separa, por si só, os efeitos do ADC, do gerador e do modelo. A limitação do modelo a 0–255 também reduz a contribuição das regiões saturadas ao resíduo.
 
 ### 4.2. Formulação Matemática das Métricas em `adc_analyzer.m`
 
@@ -230,9 +234,9 @@ Segundo a Seção 5 da IEEE Std 1241, o ensaio de um ADC parte da coleta de um r
 2. **Ganho Medido ($G$), Erro de Ganho e Erro de Offset (Regressão Linear na Região Não-Saturada $10 \le y_{\text{ideal}} \le 245$):**
    $$\text{Erro de Ganho (LSB)} = (G - 1.0) \times 255, \qquad \text{Erro de Offset (LSB)} = (G \cdot 127.5 + b) - 127.5$$
 
-3. **Erros Absoluto, RMS Bruto, RMS Intrínseco e Relativo:**
+3. **Erros Absoluto, RMS Bruto, RMS Residual e Relativo:**
    - **Erro Instantâneo Bruto:** $e_{\text{bruto}}(n) = y_{\text{ADC}}(n) - y_{\text{tri,cont}}(n)$
-   - **Erro Instantâneo Intrínseco (sem ganho/offset de bancada):** $e_{\text{intr}}(n) = y_{\text{ADC}}(n) - \text{clip}_{[0,255]}(G \cdot y_{\text{tri,cont}}(n) + b)$
+   - **Erro Instantâneo Residual (após ajuste de ganho/offset e limitação do modelo):** $e_{\text{intr}}(n) = y_{\text{ADC}}(n) - \text{clip}_{[0,255]}(G \cdot y_{\text{tri,cont}}(n) + b)$
    - **MAE (Erro Absoluto Médio):** $\text{MAE} = \frac{1}{N}\sum_{n=0}^{N-1} |e_{\text{bruto}}(n)|$
    - **RMSE (Raiz do Erro Quadrático Médio):** $\text{RMSE} = \sqrt{\frac{1}{N}\sum_{n=0}^{N-1} e_{\text{bruto}}^2(n)}$
    - **Erro Relativo ao Fundo de Escala ($\%FSR$):** $\varepsilon_{\%FSR} = \frac{\text{Erro (LSB)}}{255} \times 100\%$
@@ -241,19 +245,19 @@ Segundo a Seção 5 da IEEE Std 1241, o ensaio de um ADC parte da coleta de um r
 4. **DNL, INL, *Missing Codes* e Monotonicidade (Teste de Histograma Linear — IEEE Std 1241):**
    Sobre um número inteiro de períodos $N_{\text{int}} = \lfloor N / T_p \rfloor \cdot T_p$ (ou sobre a maior rampa monotônica quando $N < T_p$), seja $H(k)$ a contagem de ocorrências do código $k \in \{k_{\min}+1, \dots, k_{\max}-1\}$ e $\overline{H}$ a contagem média esperada por nível:
    $$\text{DNL}(k) = \frac{H(k)}{\overline{H}} - 1, \qquad \text{INL}(k) = \sum_{j=k_{\min}+1}^{k} \left[\text{DNL}(j) - \overline{\text{DNL}}\right]$$
-   - Se $\text{DNL}(k) = -1.0\text{ LSB}$ ($H(k) = 0$), o código $k$ é um **missing code**.
-   - Se $\text{DNL}(k) > -1.0\text{ LSB}$ para todo $k$ e a curva de transferência média $\overline{y}_{\text{ADC}}(k)$ não apresenta inversões de inclinação ($\Delta \overline{y}_{\text{ADC}} \ge 0$), o conversor é **garantidamente monotônico**.
+   - Se $\text{DNL}(k) = -1.0\text{ LSB}$ ($H(k) = 0$), o código $k$ **não foi observado no registro analisado**; isso, isoladamente, não demonstra um código ausente na transferência física do ADC.
+   - Se $\text{DNL}(k) > -1.0\text{ LSB}$ para todo $k$ e a curva de transferência média $\overline{y}_{\text{ADC}}(k)$ não apresenta inversões de inclinação ($\Delta \overline{y}_{\text{ADC}} \ge 0$), o resultado é **compatível com comportamento monotônico na faixa e nas condições avaliadas**. A rotina admite pequenas inversões de até 0,5 LSB na curva média; portanto, seu indicador não constitui uma prova de monotonicidade.
 
 5. **Espectro Analítico da Onda Triangular, FFT Tripla e Faixa Dinâmica ($\text{DR}$):**
    - Analiticamente, um pulso triangular $\text{tri}(t/\tau) = \frac{1}{\tau}\text{rect}(t/\tau)*\text{rect}(t/\tau)$ possui Transformada de Fourier $\tau\,\text{sinc}^2(f\tau)$. Quando periódico com frequência $f_0 = 1/T$, sua série de Fourier contém **exclusivamente harmônicas ímpares** ($k = 1, 3, 5, \dots$) com decaimento proporcional a $1/k^2$ ($-12\text{ dB/oitava}$):
      $$x_{\text{tri}}(t) = \frac{A}{2} - \frac{4A}{\pi^2}\sum_{m=1}^{\infty} \frac{1}{(2m-1)^2}\cos\!\left(2\pi (2m-1)f_0 t\right)$$
    - A 3ª harmônica ($3f_0$) está a $20\log_{10}(1/9) = \mathbf{-19.08\text{ dBc}}$ da fundamental, e a potência somada das harmônicas ímpares ($3f_0, 5f_0, \dots$) equivale a $\left(\frac{\pi^4}{96}-1\right) \approx \mathbf{-18.33\text{ dB}}$.
-   - Por isso, tratar a onda triangular como se fosse uma senoide pura limitaria artificialmente o $\text{SINAD}$ a $18.33\text{ dB}$ ($\text{ENOB} = 2.75\text{ bits}$). Em `adc_analyzer.m`, mascaramos as harmônicas da triangular na sua frequência exata medida (`freq_hz`) e aplicamos a normalização de Parseval para janela de Hann ($\text{ENBW} = 1.5$), obtendo o piso de ruído real do ADC ($P_{\text{ruído}}$), a Faixa Dinâmica ($\text{DR}$) e o $\text{ENOB}$ da onda triangular:
+   - Por isso, tratar a onda triangular como se fosse uma senoide pura limitaria artificialmente o $\text{SINAD}$ a $18.33\text{ dB}$ ($\text{ENOB} = 2.75\text{ bits}$). Em `adc_analyzer.m`, mascaramos as harmônicas da triangular na sua frequência exata medida (`freq_hz`) e aplicamos a normalização de Parseval para janela de Hann ($\text{ENBW} = 1.5$), estimando o piso de ruído do registro nas bandas restantes ($P_{\text{ruído}}$), a Faixa Dinâmica ($\text{DR}$) e o $\text{ENOB}$ da onda triangular:
      $$\text{DR}_{\text{dB}} = 10\log_{10}\!\left(\frac{127.5^2 / 2}{P_{\text{ruído}}}\right), \qquad \text{SINAD}_{\text{tri}} = 10\log_{10}\!\left(\frac{\text{Var}(y_{\text{ideal}})}{\text{MSE}}\right), \qquad \text{ENOB}_{\text{tri}} = \frac{\text{SINAD}_{\text{tri}} - 1.76 + 1.25}{6.02}$$
 
 ---
 
-## 5. Calibração com Osciloscópio de Bancada: O Verdadeiro $V_{\text{ref}}$ e o Erro de Ganho/Offset
+## 5. Calibração com Osciloscópio de Bancada: Estimativa de $V_{\text{ref}}$ e o Erro de Ganho/Offset
 
 As capturas do osciloscópio digital em `data/oscilloscope/*.BMP` registraram o sinal analógico real aplicado ao pino `A0` do ATmega2560:
 
@@ -267,13 +271,15 @@ As capturas do osciloscópio digital em `data/oscilloscope/*.BMP` registraram o 
 | `osc_f30Hz_vpp2v30_10ms.BMP` | $29.99\text{ Hz}$ | $10\text{ ms/div}$ | **$2.30\text{ V}$** | $V_{\min} \approx 0.00\text{ V}$ a $V_{\max} \approx 2.34\text{ V}$ |
 | `osc_f60Hz_vpp2v32_10ms.BMP` | $59.96\text{ Hz}$ | $10\text{ ms/div}$ | **$2.32\text{ V}$** | $V_{\min} \approx 0.00\text{ V}$ a $V_{\max} \approx 2.34\text{ V}$ |
 
-### 5.1. Determinação Experimental da Referência Interna Real ($V_{\text{ref,real}} \approx 2.31\text{ V}$)
+### 5.1. Estimativa Experimental da Referência Interna ($V_{\text{ref,real}} \approx 2.31\text{ V}$)
 
 1. Como o sinal analógico de **$V_{pp,\text{osc}} = 2.34\text{ V}$** ($0\text{ V}$ a $2.34\text{ V}$) preencheu todos os 256 níveis do ADC ($0$ a $255$) com ganho relativo de $G_{\text{rel}} \approx 1.009\text{ a }1.0168$, a tensão de referência interna real ($V_{\text{ref,real}}$) da placa utilizada é:
    $$V_{\text{ref,real}} = \frac{2.34\text{ V}}{1.013} \approx \mathbf{2.31\text{ V}} \implies 1\text{ LSB}_{\text{real}} = \frac{2.31\text{ V}}{256} \approx \mathbf{9.02\text{ mV}}$$
+A estimativa depende da amplitude medida, do ajuste e das condições de bancada. Não foi estabelecida uma incerteza de medição nem feita uma medição independente da referência; por isso, o valor não deve ser interpretado como calibração metrológica.
+
 2. Esse valor está dentro da especificação oficial da Microchip para a referência bandgap interna ($2.30\text{ V} \le V_{\text{INT}} \le 2.80\text{ V}$), situando-se **$-9.8\%$ abaixo** do valor nominal de $2.56\text{ V}$.
 3. **Erro de Ganho Absoluto vs. Erro de Ganho Residual:**
-   - **Antes da calibração (`contraex_saturado_2v56_f05Hz_fs02000Hz.mat`):** injetando $2.56\text{ V}$ nominais no pino `A0`, o ADC saturou no código $255$ acima de $2.31\text{ V}$, medindo exatamente o **Erro de Ganho Absoluto do conjunto ADC + Referência Interna**:
+   - **Antes da calibração (`contraex_saturado_2v56_f05Hz_fs02000Hz.mat`):** injetando $2.56\text{ V}$ nominais no pino `A0`, o ADC saturou no código $255$ acima de $2.31\text{ V}$, permitindo estimar o **desvio de ganho do conjunto de medição, incluindo ADC e referência interna**:
      $$G_{\text{abs}} = \frac{2.56\text{ V}}{2.32\text{ V}} = \mathbf{1.100} \quad (\text{Erro de Ganho Absoluto} = \mathbf{+25.4\text{ LSB} = +9.97\%\text{ FSR}})$$
    - **Após calibração com o osciloscópio ($V_{pp} = 2.34\text{ V}$):** ajustando a excursão do gerador para varrer $0\text{ V}$ a $V_{\text{ref,real}}$, o **Erro de Ganho Residual** ficou em $+0.88\%\text{ a }+1.68\%\text{ FSR}$ ($+2.26\text{ a }+4.30\text{ LSB}$) e o **Erro de Offset** em $-0.38\text{ a }+0.39\text{ LSB}$ ($\pm 0.15\%\text{ FSR}$).
 
@@ -310,7 +316,7 @@ Os 35 arquivos `.mat` originais foram preservados e organizados em:
 
 | Arquivo Contraexemplo | Condição Experimental | Métricas Observadas | Fenômeno Físico / Matemático Demonstrado |
 | :--- | :--- | :--- | :--- |
-| **`contraex_saturado_2v56_f05Hz_fs02000Hz.mat`** | $f=5.03\text{ Hz}, f_s=2000\text{ Hz}$<br>Gerador em $2.56\text{ V}_{\max}$ | $\text{Offset} = +11.88\text{ LSB}$<br>$\text{Ganho} = +25.41\text{ LSB}$ ($+9.97\%$)<br>$\text{RMSE} = 12.91\text{ LSB}$ | **Saturação no topo (`255`) por desvio de $V_{\text{ref}}$:** comprova que $V_{\text{ref,real}} \approx 2.31\text{ V} < 2.56\text{ V}$, ceifando os $250\text{ mV}$ superiores da onda triangular. |
+| **`contraex_saturado_2v56_f05Hz_fs02000Hz.mat`** | $f=5.03\text{ Hz}, f_s=2000\text{ Hz}$<br>Gerador em $2.56\text{ V}_{\max}$ | $\text{Offset} = +11.88\text{ LSB}$<br>$\text{Ganho} = +25.41\text{ LSB}$ ($+9.97\%$)<br>$\text{RMSE} = 12.91\text{ LSB}$ | **Saturação no topo (`255`) por desvio de $V_{\text{ref}}$:** é compatível com a hipótese de que $V_{\text{ref,real}} \approx 2.31\text{ V} < 2.56\text{ V}$, ceifando os $250\text{ mV}$ superiores da onda triangular. |
 | **`contraex_subamostrado_Np397_f05Hz_fs02000Hz.mat`** | $f=5.03\text{ Hz}, f_s=2000\text{ Hz}$<br>Gerador ajustado ($2.34\text{ V}_{pp}$) | $N_p = \mathbf{397.4\text{ am/ciclo}} < 512$<br>$\text{RMSE} = 0.83\text{ LSB}$ | **Violação da condição $f_s > 512 \cdot f$:** com apenas $198.7$ amostras por rampa para $256$ níveis, cada subida/descida individual salta $\sim 57$ códigos. |
 | **`contraex_meio_ciclo_f01Hz_fs08192Hz.mat`** | $f=1.01\text{ Hz}, f_s=8196.7\text{ Hz}$<br>$N = 4096\text{ amostras}$ | Janela $= 0.50\text{ s}$ ($0.50\text{ ciclo}$)<br>Excursão $= 0..207\text{ LSB}$ | **Janela de aquisição inferior a 1 período ($N < T_p$):** a captura termina antes de a rampa atingir o código $255$, impedindo o teste de fundo de escala completo. |
 | **`contraex_missing_code_f30Hz_fs16384Hz.mat`** | $f=30.25\text{ Hz}, f_s=16393.4\text{ Hz}$<br>$N_p = 542.0\text{ am/ciclo}$ | `missing_codes = 1`<br>$\text{DNL}_{\min} = -1.00\text{ LSB}$ | **Operação no limiar $N_p \approx 512$:** com apenas $1.058\text{ amostras/nível/rampa}$ e sincronismo inteiro ($N_p = 542.0$), ocorre efeito pente no DNL e perda pontual de 1 código. |
@@ -319,12 +325,12 @@ Os 35 arquivos `.mat` originais foram preservados e organizados em:
 
 ## 7. Principais Conclusões Físicas e de Engenharia
 
-1. **Precisão Intrínseca de 8 bits Até $1\text{ MHz}$ de Clock do ADC ($f_s = 32.79\text{ kHz}$):**
-   Em todas as faixas de frequência ($1\text{ Hz}$ a $60.49\text{ Hz}$) e taxas de amostragem ($1024\text{ Hz}$ a $32787\text{ Hz}$), o **erro RMS intrínseco do conversor SAR manteve-se invariante entre $0.34\text{ e }0.38\text{ LSB}$** ($0.13\%\text{ a }0.15\%\text{ FSR}$), muito próximo ao limite teórico ideal de $\frac{1}{\sqrt{12}} = 0.289\text{ LSB}$, com **$\text{ENOB}$ entre $7.52\text{ e }7.70\text{ bits}$** e **Faixa Dinâmica ($\text{DR}$) entre $46.4\text{ e }48.4\text{ dB}$** (limite ideal de 8 bits: $48.16\text{ dB}$).
-2. **O "Efeito Pente" em DNL/INL quando $N_p \approx 512\text{ amostras/ciclo}$:**
-   Quando $N_p = 542.0\text{ amostras/ciclo}$ ($271\text{ amostras}$ por rampa de $256\text{ níveis}$), a razão $\frac{271}{256} = 1.0586$ faz com que, a cada rampa, $241$ níveis recebam $1$ amostra e $15$ níveis recebam $2$ amostras (batimento a cada $\frac{256}{15} \approx 17\text{ códigos}$). Quando $N_p$ é inteiro exato, todos os ciclos repetem as 2 amostras nos mesmos 15 códigos, produzindo 15 espigas periódicas no gráfico de DNL e um formato dente-de-serra de 15 dentes no INL. Operar com $N_p \ge 800\text{ am/ciclo}$ (ex.: `adc_f01Hz_fs01024Hz_pre16.mat` com $N_p = 1017.5$ ou `adc_f05Hz_fs04000Hz_pre16.mat` com $N_p = 794.9$) elimina esse efeito de batimento e reduz o $\text{INL}_{\text{RMS}}$ para $0.16\text{ a }0.18\text{ LSB}$.
-3. **Separação entre Erro da Referência Bandgap e Erro do Núcleo SAR:**
-   O núcleo SAR + comparador do ATmega2560 apresenta linearidade excelente ($\text{DNL}_{\text{RMS}} \approx 0.24\text{ LSB}$, $\text{INL}_{\text{RMS}} \approx 0.18\text{ LSB}$, $\text{Offset} \approx \pm 0.35\text{ LSB}$). O único desvio significativo em malha aberta provém da tolerância de fábrica da referência interna de bandgap ($V_{\text{ref,real}} \approx 2.31\text{ V}$ frente a $2.56\text{ V}$ nominais), perfeitamente quantificado pelas medições cruzadas com o osciloscópio.
+1. **Resultados residuais nas condições ensaiadas:**
+   Nos 13 ensaios principais, com clock do ADC de $1\text{ MHz}$, o RMSE residual após ajuste ficou entre aproximadamente $0.34$ e $0.46\text{ LSB}$, o ENOB estimado pelo modelo triangular entre $7.26$ e $7.70\text{ bits}$ e a DR estimada entre $46.4$ e $48.3\text{ dB}$. Esses resultados descrevem os registros analisados e não isolam o desempenho do núcleo SAR.
+2. **Influência da amostragem nos histogramas:**
+   Nos registros próximos de $542\text{ amostras/ciclo}$, há cerca de $271$ amostras por rampa para $256$ níveis. A distribuição discreta das amostras e a relação entre os clocks podem contribuir para padrões periódicos em DNL/INL. Os ensaios com aproximadamente 795 e 1018 amostras por ciclo apresentaram INL RMS próximo de 0,18 e 0,16 LSB, respectivamente; isso não estabelece um limiar universal de eliminação do efeito.
+3. **Hipótese sobre a referência interna:**
+   As medições de bancada e o ajuste de ganho sugerem referência efetiva próxima de $2.31\text{ V}$, abaixo do valor nominal de $2.56\text{ V}$. A referência pode explicar parte do desvio observado, mas os ensaios não permitem atribuir todo o erro a ela nem separar completamente as contribuições do gerador, do ADC e dos instrumentos.
 
 ---
 

@@ -7,7 +7,7 @@ function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, 
     %   2. Sinal triangular ideal quantizado (256 níveis)
     %   3. Sinal triangular contínuo puro
     % E calcula DR (Faixa Dinâmica), SINAD, SFDR, THD, ENOB e piso de ruído RMS,
-    % descontando corretamente as harmônicas ímpares próprias da onda triangular.
+    % com estimativas adaptadas à triangular e máscaras em torno das harmônicas.
     % =========================================================================
 
     if nargin < 6 || isempty(LSB_MV)

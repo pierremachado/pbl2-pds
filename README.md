@@ -35,8 +35,8 @@ Foram preservadas **35 capturas**, organizadas em **13 ensaios principais**, **4
 
 | Métrica | Resultado observado |
 | :--- | :--- |
-| Erro RMS intrínseco estimado | **0,34 a 0,46 LSB** |
-| ENOB intrínseco estimado | **7,26 a 7,70 bits** |
+| Erro RMS residual após ajuste | **0,34 a 0,46 LSB** |
+| ENOB estimado após ajuste | **7,26 a 7,70 bits** |
 | Faixa dinâmica (DR) estimada | **46,4 a 48,3 dB** |
 | Códigos ausentes nos 13 ensaios principais | **0** (pelo método de análise utilizado) |
 | Referência interna efetiva estimada | **≈ 2,31 V**, frente a 2,56 V nominais |
@@ -77,7 +77,3 @@ uart_oscilloscope                                % Nova aquisição: requer plac
 ```
 
 Para fazer novas aquisições, grave antes `firmware/adc_uart/adc_uart.ino` no Arduino Mega 2560 e conecte a placa à porta serial configurada nos scripts. Para analisar os arquivos `.mat` já coletados, não é necessário conectar o hardware.
-
-## Documentação completa
-
-A fundamentação sobre o ADC SAR, cálculos de amostragem, protocolo UART, metodologia, calibração, tabelas completas e referências bibliográficas está no **[relatório técnico em HTML](docs/reports/relatorio_tecnico.html)**.
