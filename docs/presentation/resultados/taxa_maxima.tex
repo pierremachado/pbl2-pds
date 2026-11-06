@@ -1,0 +1,16 @@
+\begin{itemize}
+\item Considerando apenas a conversão: $f_{s,max}\approx1/(13\ \mu s)=76{,}9$ kHz.
+\item No firmware, reservamos tempo para alinhamento do ADC e execução da interrupção:
+\end{itemize}
+\[
+C_{req}=14\cdot16+256=480\ \text{ciclos de CPU}.
+\]
+O Timer1 usa divisor 8. Como a validação exige $8\cdot ticks>480$, o menor período aceito tem 61 ticks:
+\[
+T_{s,min}=30{,}5\ \mu s,\qquad
+\boxed{f_{s,max}=32\,786{,}9\ \text{Hz}}.
+\]
+\begin{exampleblock}{Ensaio no limite configurado}
+A captura de aproximadamente 60 Hz utilizou essa taxa e apresentou 542 amostras por ciclo, sem erro de atraso reportado.
+\end{exampleblock}
+\pblfonte{Relatório técnico, seção 3.1; Capture\_Validate; adc\_f60Hz\_fs32768Hz\_pre16.mat.}

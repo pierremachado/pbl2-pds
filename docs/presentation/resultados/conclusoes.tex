@@ -1,0 +1,21 @@
+\begin{frame}{Considerações Finais}
+\begin{itemize}
+\item Implementamos a aquisição de 8 bits com temporização pelo Timer1, armazenamento em RAM e transferência serial para o Octave.
+\item A taxa máxima aceita pelo firmware é aproximadamente 32,79 kHz. A escolha da frequência do sinal também depende da quantidade de pontos por rampa e do tamanho do bloco.
+\item Nos ensaios principais, o erro residual ficou próximo de uma fração de LSB. A nova captura de 10 Hz apresentou RMSE bruto de 0,393 LSB e residual de 0,339 LSB.
+\item As medições de bancada mostraram a importância de verificar a tensão aplicada e distinguir a referência nominal da escala efetiva do conjunto.
+\end{itemize}
+\pblfonte{Relatório técnico; firmware; capturas e medições de bancada.}
+\end{frame}
+
+\begin{frame}{Limitações e Continuidade}
+\begin{itemize}
+\item Medir a referência de forma independente e registrar a incerteza dos instrumentos antes de corrigir definitivamente a escala em volts.
+\item Repetir os ensaios com mais blocos e diferentes relações entre frequência do sinal e taxa de amostragem.
+\item Verificar todos os níveis em cada rampa, além do histograma acumulado.
+\item Comparar a temporização nominal com uma medição externa. Na nova aquisição, estimamos 10,072 Hz e o osciloscópio indicou 10,01 Hz.
+\end{itemize}
+\begin{block}{Alcance dos resultados}
+As medidas caracterizam o conjunto de bancada nas condições ensaiadas. O ajuste da triangular não separa completamente os erros do ADC, do gerador e dos instrumentos.
+\end{block}
+\end{frame}

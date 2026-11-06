@@ -1,0 +1,15 @@
+\begin{frame}{Amostragem da Onda Triangular}
+\begin{block}{Quantidade de pontos por período}
+Para percorrer 256 níveis na subida e na descida, adotamos:
+\[
+N_p=\frac{f_s}{f}\geq512.
+\]
+Essa condição orienta a escolha de $f_s$. A presença de cada código também depende da fase, do ruído e da amplitude aplicada.
+\end{block}
+\begin{itemize}
+\item Com $N=4096$, pelo menos um ciclo requer $f\geq f_s/4096$.
+\item A $8196{,}7$ Hz, a faixa correspondente é aproximadamente \textbf{2 a 16 Hz}.
+\item Na nova captura de 10 Hz: \textbf{813,8 amostras/ciclo} e aproximadamente \textbf{5 ciclos} no bloco.
+\end{itemize}
+\pblfonte{Enunciado, item 2.4; relatório técnico, seção 3.2; captura de 06/11, 10:28:22.}
+\end{frame}

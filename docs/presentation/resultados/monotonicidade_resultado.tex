@@ -1,0 +1,17 @@
+\begin{columns}[T]
+\column{0.56\textwidth}
+\begin{tikzpicture}
+\begin{axis}[pblplot,height=5cm,xlabel={Código ideal},ylabel={Código médio medido},xmin=0,xmax=255,ymin=0,ymax=255]
+\addplot[green!50!black,dashed,domain=0:255] {x};
+\addplot[blue] table[x index=0,y index=3]{resultados/linearidade_10hz.dat};
+\end{axis}
+\end{tikzpicture}
+\column{0.40\textwidth}
+\begin{itemize}
+\item Curva média próxima à ideal.
+\item Nenhum código interno ausente na nova captura.
+\item Os 13 ensaios principais anteriores também passaram pelo critério da rotina.
+\end{itemize}
+\small Um contraexemplo a 30 Hz apresentou um código não observado. A repetição do ensaio é necessária antes de atribuir isso ao ADC.
+\end{columns}
+\pblfonte{Captura de 06/11; tabela consolidada; contraex\_missing\_code\_f30Hz\_fs16384Hz.mat.}

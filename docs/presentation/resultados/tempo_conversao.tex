@@ -1,0 +1,21 @@
+\begin{columns}[T]
+\column{0.52\textwidth}
+\begin{block}{Configuração utilizada}
+\[
+f_{ADC}=\frac{16\ \text{MHz}}{16}=1\ \text{MHz}
+\]
+\[
+T_{conv}=\frac{13}{f_{ADC}}=13\ \mu\text{s}
+\]
+\end{block}
+\begin{itemize}
+\item A primeira conversão exige 25 ciclos.
+\item O firmware descarta 16 leituras na inicialização e após mudar o prescaler.
+\end{itemize}
+\column{0.43\textwidth}
+\begin{alertblock}{Condição de operação}
+O datasheet recomenda 50 a 200 kHz para a resolução completa de 10 bits. Para resolução menor, admite clock de até 1 MHz.
+\end{alertblock}
+\small O valor de $13\ \mu$s vem do datasheet e do clock nominal. Não medimos diretamente a duração da conversão na bancada.
+\end{columns}
+\pblfonte{Datasheet 2549Q, seção 26.4, p. 271; firmware adc\_uart.ino.}

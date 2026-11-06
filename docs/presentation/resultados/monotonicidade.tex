@@ -1,0 +1,12 @@
+\begin{block}{Comportamento esperado}
+Um conversor monotônico não reduz seu código de saída quando a tensão de entrada aumenta.
+\end{block}
+\begin{itemize}
+\item Construímos a curva média dos códigos medidos para cada nível da referência ideal.
+\item Procuramos inversões e códigos não observados no histograma.
+\item A rotina tolera inversões de até 0,5 LSB e exige ausência de códigos internos faltantes para marcar o registro como monotônico.
+\end{itemize}
+\begin{alertblock}{Limite do ensaio}
+O indicador descreve o registro analisado. Ele não prova monotonicidade em toda a faixa de operação do componente.
+\end{alertblock}
+\pblfonte{Relatório técnico, seção 4.2; computeHistogramLinearity.m.}

@@ -1,0 +1,13 @@
+\centering
+\begin{tikzpicture}
+\begin{axis}[pblplot,xlabel={Código ADC},ylabel={DNL estimada (LSB)},xmin=0,xmax=255,ymin=-1.1,ymax=0.8]
+\addplot[blue] table[x index=0,y index=1]{resultados/linearidade_10hz.dat};
+\addplot[red,dashed,domain=0:255] {-1};
+\end{axis}
+\end{tikzpicture}
+\par\small Na nova captura: \textbf{$-0{,}374$ a $+0{,}502$ LSB}, sem códigos internos ausentes.
+\[
+DNL(k)=\frac{H(k)}{\overline H}-1.
+\]
+\small A contagem por código estima a largura dos intervalos sob a hipótese de uma rampa linear. Não é uma medição direta de cada transição.
+\pblfonte{computeHistogramLinearity.m; captura de 06/11, 10:28:22.}

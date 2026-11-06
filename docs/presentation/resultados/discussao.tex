@@ -1,0 +1,55 @@
+\begin{frame}{Resultados nos Ensaios Selecionados}
+\small
+\begin{center}
+\begin{tabular}{rrrrr}
+\hline
+\textbf{$f$ (Hz)} & \textbf{$f_s$ (Hz)} & \textbf{RMSE residual} & \textbf{DR (dB)} & \textbf{ENOB}\\
+ & & \textbf{(LSB)} & & \textbf{estimado}\\\hline
+1,006 & 1024,1 & 0,350 & 48,31 & 7,62\\
+5,032 & 4000,0 & 0,353 & 48,16 & 7,63\\
+8,066 & 8196,7 & 0,364 & 47,86 & 7,59\\
+10,072* & 8196,7 & 0,339 & 48,29 & 7,68\\
+30,246 & 16393,4 & 0,337 & 47,74 & 7,70\\
+60,491 & 32786,9 & 0,347 & 46,43 & 7,63\\\hline
+\end{tabular}
+\end{center}
+\begin{itemize}
+\item Na campanha anterior, o RMSE residual variou de 0,34 a 0,46 LSB nos 13 ensaios principais.
+\item *A linha de 10 Hz corresponde à nova captura de 06/11.
+\item O ENOB vem do modelo triangular e do erro residual. Não equivale diretamente a um ensaio senoidal padronizado.
+\end{itemize}
+\pblfonte{adc\_summary\_metrics.csv; nova captura recalculada com adc\_analyzer.}
+\end{frame}
+
+\begin{frame}{Contraexemplo: Saturação da Entrada}
+\centering
+\begin{tikzpicture}
+\begin{axis}[pblplot,xlabel={Índice da amostra},ylabel={Código ADC},xmin=0,xmax=850,ymin=-5,ymax=270]
+\addplot[blue] table[x index=0,y index=1]{resultados/contraex_saturado_2v56_f05Hz_fs02000Hz.dat};
+\end{axis}
+\end{tikzpicture}
+\begin{itemize}
+\item O topo fica limitado em 255. O RMSE bruto sobe para \textbf{12,91 LSB}.
+\item Após o ajuste e a limitação do modelo, o resíduo cai para 0,58 LSB. Esse valor menor não recupera a informação perdida por saturação.
+\end{itemize}
+\pblfonte{contraex\_saturado\_2v56\_f05Hz\_fs02000Hz.mat; relatório técnico, seção 6.2.}
+\end{frame}
+
+\begin{frame}{Contraexemplos: Quantidade de Amostras}
+\begin{columns}[T]
+\column{0.48\textwidth}
+\begin{block}{Poucos pontos por rampa}
+Em $f\approx5$ Hz e $f_s=2000$ Hz, obtemos aproximadamente 397 amostras/ciclo: menos de 200 por rampa para 256 níveis.
+\end{block}
+\small Um histograma acumulado pode visitar todos os códigos sem que cada subida ou descida cumpra o requisito.
+\column{0.48\textwidth}
+\begin{block}{Janela menor que um ciclo}
+Em $f\approx1$ Hz e $f_s=8196{,}7$ Hz, 4096 amostras cobrem apenas 0,50 s. O registro vai de 0 a 207 códigos.
+\end{block}
+\small A análise precisa considerar a duração da janela, além da taxa de amostragem.
+\end{columns}
+\begin{exampleblock}{Escolha de aquisição}
+Aumentar $f_s$ melhora a quantidade de pontos por rampa, mas reduz o tempo observado quando o tamanho do bloco é fixo.
+\end{exampleblock}
+\pblfonte{Contraexemplos subamostrado e meio\_ciclo; relatório técnico, seção 6.2.}
+\end{frame}

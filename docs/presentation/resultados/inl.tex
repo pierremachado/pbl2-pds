@@ -1,0 +1,12 @@
+\centering
+\begin{tikzpicture}
+\begin{axis}[pblplot,xlabel={Código ADC},ylabel={INL estimada (LSB)},xmin=0,xmax=255,ymin=-0.8,ymax=0.8]
+\addplot[magenta,thick] table[x index=0,y index=2]{resultados/linearidade_10hz.dat};
+\end{axis}
+\end{tikzpicture}
+\par\small Na nova captura: \textbf{$-0{,}267$ a $+0{,}571$ LSB}.
+\begin{itemize}
+\item Estimamos INL pela soma acumulada da DNL centrada.
+\item O resultado depende da distribuição de amostras e da linearidade da rampa do gerador. Os códigos extremos ficam fora do cálculo do histograma.
+\end{itemize}
+\pblfonte{computeHistogramLinearity.m; captura de 06/11, 10:28:22.}
