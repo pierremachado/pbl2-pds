@@ -16,6 +16,7 @@ Alternativamente, use `tectonic main.tex`. O `main.pdf` versionado foi compilado
 ## Dados e imagens
 
 - Os gráficos de tempo, FFT, DNL, INL e transferência usam `../../tools/octave/data/sample_20261106_102822_177.mat`, por meio dos arquivos numéricos em `resultados/`.
+- A repetição das 10:46:10 usa `sample_20261106_104610_118.mat`, com RMSE residual de 0,3375 LSB e nenhum código interno ausente. A imagem nativa `../../data/oscilloscope/MAP001.BMP` confirma os valores transcritos da fotografia de bancada.
 - A comparação anterior de 10 Hz usa `adc_f10Hz_fs08192Hz_pre16.mat`. Os demais ensaios selecionados usam a tabela `../../tools/octave/outputs/adc_summary_metrics.csv`.
 - O exemplo de saturação usa `contraex_saturado_2v56_f05Hz_fs02000Hz.mat`.
 - As três fotografias em `Imagens/bancada/` foram fornecidas durante a medição de 06/11/2026. As duas primeiras mostram a bancada sem e com Arduino em paralelo. A terceira registra máximo, mínimo, pico a pico e média.
