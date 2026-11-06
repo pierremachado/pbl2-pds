@@ -7,6 +7,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
 
     fig = figure("name", "Analisador de Dados do ADC (ATmega2560 | Vref = 2.56 V | 8 bits = 256 níveis)", ...
                  "numbertitle", "off", ...
+                 "toolbar", "figure", ...
                  "color", [0.95, 0.96, 0.98], ...
                  "position", [20, 20, 1520, 880]);
 
@@ -133,7 +134,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                          "foregroundcolor", [0.45, 0.90, 1.00], ...
                          "string", "");
 
-    % 8. CONTROLES INFERIORES (Seletor de Arquivo, Zoom, Pan, Unidade, Salvar e Lote)
+    % 8. CONTROLES INFERIORES (Seletor de Arquivo, Unidade, Salvar e Lote)
     uicontrol(fig, "style", "text", "units", "normalized", ...
               "position", [0.04, 0.045, 0.05, 0.028], ...
               "backgroundcolor", [0.95, 0.96, 0.98], "string", "Arquivo:");
@@ -157,22 +158,6 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                          "string", {"Código ADC (0..255)", "Tensão (0..2.56 V)", "Erro Relativo (%FSR)"}, ...
                          "value", 1);
 
-    uicontrol(fig, "style", "text", "units", "normalized", ...
-              "position", [0.04, 0.010, 0.05, 0.028], ...
-              "backgroundcolor", [0.95, 0.96, 0.98], "string", "Zoom:");
-
-    sld_win = uicontrol(fig, "style", "slider", "units", "normalized", ...
-                        "position", [0.09, 0.010, 0.10, 0.028], ...
-                        "min", 64, "max", 4096, "value", 1024);
-
-    uicontrol(fig, "style", "text", "units", "normalized", ...
-              "position", [0.195, 0.010, 0.04, 0.028], ...
-              "backgroundcolor", [0.95, 0.96, 0.98], "string", "Pan:");
-
-    sld_pan = uicontrol(fig, "style", "slider", "units", "normalized", ...
-                        "position", [0.235, 0.010, 0.085, 0.028], ...
-                        "min", 0, "max", 4032, "value", 0);
-
     btn_save = uicontrol(fig, "style", "togglebutton", "units", "normalized", ...
                          "position", [0.325, 0.008, 0.075, 0.032], ...
                          "backgroundcolor", [0.20, 0.55, 0.30], ...
@@ -193,37 +178,27 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
 
     while ishandle(fig)
         sel_idx = get(pop_file, "value");
-        if sel_idx ~= curr_idx
+        file_changed = sel_idx ~= curr_idx;
+        if file_changed
             curr_idx = sel_idx;
             fpath = fullfile(data_dir, mat_files(curr_idx).name);
             m_current = analyzeSingleCapture(fpath, VREF, LSB_MV, "opt");
             nx = numel(m_current.x_plot);
             default_win = min(max(128, round(2.5 * m_current.period_samples)), round(0.5 * nx));
-            set(sld_win, "min", 16, "max", nx, "value", default_win, ...
-                         "sliderstep", [max(1 / nx, 0.01), 0.10]);
-            init_max_pan = max(1, nx - default_win);
-            set(sld_pan, "min", 0, "max", init_max_pan, "value", 0, ...
-                         "sliderstep", [max(1 / init_max_pan, 0.01), 0.10]);
             prev_unit_mode = -1;
-            prev_pan_start = -1;
-            prev_win_len   = -1;
         end
 
         unit_mode = get(pop_unit, "value");
-        nx = numel(m_current.x_plot);
-        win_len = max(16, min(round(get(sld_win, "value")), nx));
-        max_pan = max(0, nx - win_len);
-        pan_start = min(round(get(sld_pan, "value")), max_pan);
-
-        slider_max_pan = max(1, max_pan);
-        if abs(get(sld_pan, "max") - slider_max_pan) > 0.5
-            set(sld_pan, "max", slider_max_pan, "value", pan_start, ...
-                         "sliderstep", [max(1 / slider_max_pan, 0.01), 0.10]);
-        elseif get(sld_pan, "value") > max_pan
-            set(sld_pan, "value", pan_start);
+        % A navegação fica a cargo das ferramentas nativas do Octave.
+        % Reinicia a vista somente ao carregar outro arquivo.
+        pan_start = [];
+        win_len = [];
+        if file_changed
+            pan_start = 0;
+            win_len = max(16, min(default_win, nx));
         end
 
-        if unit_mode ~= prev_unit_mode || pan_start ~= prev_pan_start || win_len ~= prev_win_len
+        if unit_mode ~= prev_unit_mode
             updateAnalyzerDashboard(m_current, unit_mode, pan_start, win_len, VREF, LSB_MV, ...
                                     ax_wave, h_ideal_cont, h_ideal_quant, h_wave, h_trig, ...
                                     ax_fft, h_fft_tri, h_fft_quant, h_fft_adc, h_fft_peak, ...
@@ -232,8 +207,6 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                                     ax_dnl, h_dnl, ax_inl, h_inl, h_nonmono, ...
                                     txt_col1, txt_col2, txt_col3);
             prev_unit_mode = unit_mode;
-            prev_pan_start = pan_start;
-            prev_win_len   = win_len;
         end
 
         if ishandle(btn_save) && get(btn_save, "value") == 1

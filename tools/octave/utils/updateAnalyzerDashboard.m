@@ -38,7 +38,10 @@ function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV,
     set(h_wave,        "xdata", m.x_plot, "ydata", m.y_plot * scale_sig);
     set(h_trig,        "xdata", [0, max(1, numel(m.x_plot) - 1)], ...
                        "ydata", [m.trig_level, m.trig_level] * scale_sig);
-    xlim(ax_wave, [pan_start, pan_start + win_len]);
+    % Limites vazios preservam o pan/zoom nativo ao trocar a unidade.
+    if ~isempty(pan_start)
+        xlim(ax_wave, [pan_start, pan_start + win_len]);
+    end
     ylim(ax_wave, sig_ylim);
     ylabel(ax_wave, sig_unit_lbl);
     title(ax_wave, sprintf("1. Sinal 8 bits vs. Ideal Quantizado 256 Níveis [%s | f=%.2f Hz | fs=%.1f Hz]", ...
@@ -50,7 +53,9 @@ function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV,
     set(h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_dbfs_quant);
     set(h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_dbfs);
     set(h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_dbfs);
-    xlim(ax_fft, [0, f_max_view]);
+    if ~isempty(pan_start)
+        xlim(ax_fft, [0, f_max_view]);
+    end
 
     % 3. Curva de Transferência Real vs Ideal
     x_codes = (0:255)';
@@ -64,7 +69,9 @@ function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV,
     set(h_err_intr,  "xdata", m.x_plot, "ydata", m.err_intrinsic_lsb * err_scale);
     set(h_err_lim_p, "xdata", [0, max(1, numel(m.x_plot) - 1)], "ydata", [err_lim_val, err_lim_val]);
     set(h_err_lim_n, "xdata", [0, max(1, numel(m.x_plot) - 1)], "ydata", [-err_lim_val, -err_lim_val]);
-    xlim(ax_err, [pan_start, pan_start + win_len]);
+    if ~isempty(pan_start)
+        xlim(ax_err, [pan_start, pan_start + win_len]);
+    end
     max_e_plot = max(1.5 * err_lim_val, min(25 * err_scale, 1.15 * max(abs(m.err_vs_cont_lsb)) * err_scale));
     ylim(ax_err, [-max_e_plot, max_e_plot]);
     ylabel(ax_err, err_unit_lbl);
