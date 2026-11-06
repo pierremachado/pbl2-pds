@@ -11,7 +11,7 @@ pdflatex -interaction=nonstopmode -halt-on-error main.tex
 pdflatex -interaction=nonstopmode -halt-on-error main.tex
 ```
 
-Alternativamente, use `tectonic main.tex`. O `main.pdf` versionado foi compilado com Tectonic 0.15.0. A apresentação mantém o tema Madrid e tem 45 slides, incluindo capa, sumários e referências.
+Alternativamente, use `tectonic main.tex`. O `main.pdf` versionado foi compilado com Tectonic 0.15.0. A apresentação mantém o tema Madrid e tem 47 slides, incluindo capa, sumários e referências.
 
 ## Dados e imagens
 
