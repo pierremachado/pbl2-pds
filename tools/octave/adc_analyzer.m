@@ -9,12 +9,12 @@ function results = adc_analyzer(mode_or_file, save_updated_mat)
     %   - src/spectral/     : computeSpectralMetrics (FFT tripla, DR, SINAD, ENOB)
     %   - src/linearity/    : computeHistogramLinearity (DNL, INL, Missing Codes)
     %   - utils/            : analyzeSingleCapture, launchAnalyzerDashboard,
-    %                         runBatchAnalysis, plotComparativeFigures, etc.
+    %                         runBatchAnalysis, exportSingleDashboardPng, etc.
     %
     % Formas de uso no GNU Octave:
     %   adc_analyzer()               -> Abre o Painel Interativo Completo (GUI)
     %   adc_analyzer("batch")        -> Analisa todos os .mat de /data, gera CSV
-    %                                   e figuras comparativas em /outputs
+    %                                   e painéis individuais em /outputs
     %   adc_analyzer("arquivo.mat")  -> Abre o painel focado no arquivo indicado
     %   adc_analyzer("batch", true)  -> Lote + enriquece todos os .mat com métricas
     % =========================================================================

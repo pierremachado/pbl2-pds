@@ -64,8 +64,7 @@ pbl2-pds/
         │   ├── launchAnalyzerDashboard.m
         │   ├── updateAnalyzerDashboard.m
         │   ├── runBatchAnalysis.m
-        │   ├── exportSingleDashboardPng.m
-        │   └── plotComparativeFigures.m
+        │   └── exportSingleDashboardPng.m
         ├── data/                                  # 17 capturas selecionadas (13 principais + 4 contraexemplos)
         │   └── archive/                           # 18 repetições preservadas sem exclusão
         └── outputs/                               # Painéis .png e tabela consolidada adc_summary_metrics.csv
@@ -349,7 +348,7 @@ adc_analyzer()
 adc_analyzer("adc_f05Hz_fs04000Hz_pre16.mat")
 
 % 3. Processar todos os arquivos em lote, atualizar adc_summary_metrics.csv e exportar
-%    todos os painéis individuais e gráficos comparativos multifrequência em tools/octave/outputs/:
+%    os painéis individuais em tools/octave/outputs/:
 adc_analyzer("batch")
 
 % 4. Para realizar novas capturas em tempo real com o Arduino Mega 2560 conectado via USB:

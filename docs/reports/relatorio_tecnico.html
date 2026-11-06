@@ -106,8 +106,7 @@ a conversão A/D:</p>
         │   ├── launchAnalyzerDashboard.m
         │   ├── updateAnalyzerDashboard.m
         │   ├── runBatchAnalysis.m
-        │   ├── exportSingleDashboardPng.m
-        │   └── plotComparativeFigures.m
+        │   └── exportSingleDashboardPng.m
         ├── data/                                  # 17 capturas selecionadas (13 principais + 4 contraexemplos)
         │   └── archive/                           # 18 repetições preservadas sem exclusão
         └── outputs/                               # Painéis .png e tabela consolidada adc_summary_metrics.csv</code></pre>
@@ -1807,7 +1806,7 @@ class="sourceCode octave"><code class="sourceCode octave"><span id="cb2-1"><a hr
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>adc_analyzer(<span class="st">&quot;adc_f05Hz_fs04000Hz_pre16.mat&quot;</span>)</span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co">% 3. Processar todos os arquivos em lote, atualizar adc_summary_metrics.csv e exportar</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co">%    todos os painéis individuais e gráficos comparativos multifrequência em tools/octave/outputs/:</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co">%    os painéis individuais em tools/octave/outputs/:</span></span>
 <span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>adc_analyzer(<span class="st">&quot;batch&quot;</span>)</span>
 <span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co">% 4. Para realizar novas capturas em tempo real com o Arduino Mega 2560 conectado via USB:</span></span>

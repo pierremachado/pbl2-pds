@@ -50,7 +50,17 @@ function results = runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_M
     printf("Tabela CSV salva em: %s\n", csv_path);
 
     if ~isempty(available_graphics_toolkits())
-        plotComparativeFigures(results, output_dir, VREF, LSB_MV);
+        for idx_r = 1:n_files
+            fn_r = results{idx_r}.file_name;
+            if strncmp(fn_r, "adc_f01Hz_fs01024", 17) || ...
+               strncmp(fn_r, "adc_f05Hz_fs04000", 17) || ...
+               strncmp(fn_r, "adc_f08Hz_fs08192", 17) || ...
+               strncmp(fn_r, "adc_f30Hz_fs16384", 17) || ...
+               strncmp(fn_r, "adc_f60Hz_fs32768", 17) || ...
+               strncmp(fn_r, "contraex_", 9)
+                exportSingleDashboardPng(results{idx_r}, output_dir, VREF, LSB_MV);
+            end
+        end
     else
         printf("Aviso: Nenhum toolkit gráfico ativo nesta sessão de terminal sem DISPLAY. Execute adc_analyzer('batch') na GUI do Octave para exportar os PNGs.\n");
     end
