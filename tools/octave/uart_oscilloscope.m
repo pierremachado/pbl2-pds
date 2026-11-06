@@ -54,7 +54,7 @@ ylim(ax_wave, [-10, 265]);
 xlim(ax_wave, [0, 1536]);
 xlabel(ax_wave, "Índice da Amostra (após Trigger Auto)");
 ylabel(ax_wave, "Código ADC (0 a 255)");
-title(ax_wave, "1. Forma de Onda no Tempo (Azul: ADC | Verde: Referência Ideal)");
+title(ax_wave, "Forma de Onda no Tempo");
 legend(ax_wave, {"Referência Ideal", "Sinal ADC (8 bits)", "Nível de Trigger"}, "location", "northeast");
 
 % 2. GRÁFICO DIREITO: Espectro FFT de Magnitude (dBFS)
@@ -67,7 +67,7 @@ grid(ax_fft, "on");
 ylim(ax_fft, [-100, 5]);
 xlabel(ax_fft, "Frequência (Hz)");
 ylabel(ax_fft, "Magnitude (dBFS)");
-title(ax_fft, "2. Espectro de Magnitude (FFT Rápida)");
+title(ax_fft, "Espectro de Magnitude (FFT Rápida)");
 
 % 3. PAINEL DE TELEMETRIA BÁSICA DE BANCADA
 pnl_info = uipanel("parent", fig, "title", "Telemetria Básica de Bancada (Vref = 2.56 V | 1 LSB = 10 mV)", ...
@@ -108,6 +108,14 @@ btn_save = uicontrol(fig, "style", "togglebutton", "units", "normalized", ...
                      "backgroundcolor", [0.20, 0.55, 0.30], "foregroundcolor", [1, 1, 1], ...
                      "string", "CAPTURAR E SALVAR", "value", 0);
 
+uicontrol(fig, "style", "text", "units", "normalized", ...
+          "position", [0.05, 0.30, 0.12, 0.035], ...
+          "backgroundcolor", [0.95, 0.96, 0.98], "string", "Referência triangular:");
+sel_reference = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
+                         "position", [0.18, 0.30, 0.39, 0.04], ...
+                         "string", {"Trigger auto (rápido)", "Ajustada ao sinal (adc_analyzer)"}, ...
+                         "value", 1);
+prev_reference = -1;
 has_valid_frame = false;
 prev_win_len    = -1;
 prev_pan_start  = -1;
@@ -137,31 +145,7 @@ unwind_protect
             has_valid_frame = true;
             new_frame_read  = true;
 
-            % Usa os módulos compartilhados de src/ em modo rápido ("trig")
-            trig = detectSignalTrigger(samples);
-            per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, "trig");
-            ref  = generateIdealReference(samples, trig, per, VREF);
-            err  = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV);
-
-            % FFT rápida apenas do sinal capturado para visualização no osciloscópio
-            N_fft = sample_amount;
-            win_hann = 0.5 * (1.0 - cos(2.0 * pi * (0:(N_fft - 1))' / (N_fft - 1)));
-            Y_half = fft((samples - mean(samples)) .* win_hann)(1:(floor(N_fft / 2) + 1));
-            freq_axis = (0:(numel(Y_half) - 1))' * (actual_sampling_frequency / N_fft);
-            mag_lin = abs(Y_half) / (N_fft * mean(win_hann) / 2.0);
-            mag_dbfs = 20.0 * log10(max(mag_lin / 127.5, 1e-6));
-            [~, fund_bin] = max(mag_lin(2:end));
-            fund_bin = fund_bin + 1;
-
-            if do_save_now && ~isempty(saved_mat_path)
-                if ~exist(output_dir, "dir")
-                    mkdir(output_dir);
-                end
-                [~, base_name, ~] = fileparts(saved_mat_path);
-                png_path = fullfile(output_dir, [base_name, "_osc.png"]);
-                print(fig, png_path, "-dpng", "-r150");
-                printf("Tela do osciloscópio salva em: %s\n", png_path);
-            end
+            spec = computeOscilloscopeSpectrum(samples, actual_sampling_frequency);
         else
             pause(0.04);
         end
@@ -169,6 +153,20 @@ unwind_protect
         if ~ishandle(fig) || ~has_valid_frame
             drawnow;
             continue;
+        end
+
+        reference_mode = get(sel_reference, "value");
+        analysis_changed = new_frame_read || reference_mode ~= prev_reference;
+        if analysis_changed
+            align_mode = "trig";
+            if reference_mode == 2
+                align_mode = "opt";
+            end
+            trig = detectSignalTrigger(samples);
+            per = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode);
+            ref = generateIdealReference(samples, trig, per, VREF);
+            err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV);
+            prev_reference = reference_mode;
         end
 
         % Atualização dos 2 gráficos rápidos e sincronia dos sliders de Zoom/Pan
@@ -187,27 +185,32 @@ unwind_protect
 
         sliders_changed = (win_len ~= prev_win_len) || (pan_start ~= prev_pan_start);
 
-        if new_frame_read || sliders_changed
+        if analysis_changed || sliders_changed
             set(h_ideal, "xdata", per.x_plot, "ydata", ref.ideal_cont_plot);
             set(h_wave,  "xdata", per.x_plot, "ydata", per.y_plot);
             set(h_trig,  "xdata", [0, max(1, valid_len - 1)], "ydata", [trig.trig_level, trig.trig_level]);
             xlim(ax_wave, [pan_start, pan_start + win_len]);
             ylim(ax_wave, [-10, 265]);
 
-            if new_frame_read
+            if analysis_changed
                 f_max_view = min(actual_sampling_frequency / 2.0, max(200.0, 18.0 * per.freq_hz));
-                set(h_fft_mag,  "xdata", freq_axis, "ydata", mag_dbfs);
-                set(h_fft_peak, "xdata", freq_axis(fund_bin), "ydata", mag_dbfs(fund_bin));
+                set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_dbfs);
+                set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_dbfs);
                 xlim(ax_fft, [0, f_max_view]);
                 ylim(ax_fft, [-100, 5]);
 
+                peak_text = "sem componente AC";
+                if isfinite(spec.peak_frequency)
+                    peak_text = sprintf("%.2f Hz", spec.peak_frequency);
+                end
+
                 % Atualização da telemetria básica de bancada
                 set(txt_left, "string", sprintf([ ...
-                    "FREQUÊNCIA MEDIDA : f = %.2f Hz (Pico FFT: %.2f Hz)\n", ...
+                    "FREQUÊNCIA MEDIDA : f = %.2f Hz (Pico FFT: %s)\n", ...
                     "PERÍODO DO SINAL  : T = %.2f ms (%.1f amostras/ciclo)\n", ...
                     "TAXA AMOSTRAGEM   : fs = %.1f Hz (Prescaler = %d)\n", ...
                     "STATUS DO TRIGGER : %s (Nível = %.1f LSB)"], ...
-                    per.freq_hz, freq_axis(fund_bin), ...
+                    per.freq_hz, peak_text, ...
                     per.period_sec * 1e3, per.period_samples, ...
                     actual_sampling_frequency, adc_prescaler, ...
                     trig.trig_str, trig.trig_level));
@@ -225,6 +228,17 @@ unwind_protect
 
             prev_win_len   = win_len;
             prev_pan_start = pan_start;
+        end
+
+        % Exporta somente depois de atualizar gráficos e telemetria deste bloco.
+        if new_frame_read && do_save_now && ~isempty(saved_mat_path)
+            if ~exist(output_dir, "dir")
+                mkdir(output_dir);
+            end
+            [~, base_name, ~] = fileparts(saved_mat_path);
+            png_path = fullfile(output_dir, [base_name, "_osc.png"]);
+            print(fig, png_path, "-dpng", "-r150");
+            printf("Tela do osciloscópio salva em: %s\n", png_path);
         end
 
         drawnow;

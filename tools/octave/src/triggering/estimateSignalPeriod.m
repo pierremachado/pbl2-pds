@@ -55,13 +55,12 @@ function per = estimateSignalPeriod(samples, actual_sampling_frequency, trig, al
     % Fase inicial teórica pelo nível de trigger na borda de subida
     ph_trig = (trig.trig_level / 255.0) * 0.5;
 
-    if strcmpi(align_mode, "trig") && (~isempty(trig.rising_crossings) && numel(periods_est) >= 1)
+    if strcmpi(align_mode, "trig") && ~isempty(trig.rising_crossings)
         period_samples = T_init;
-        ph_opt = ph_trig;
-    elseif strcmpi(align_mode, "trig")
-        period_samples = T_init;
-        ph_opt = ph_trig;
+        % Compensa o arredondamento do índice de trigger para a amostra exibida.
+        ph_opt = mod(ph_trig + (trig.trig_idx - trig.rising_crossings(1)) / T_init, 1.0);
     else
+        % Sem cruzamento de subida, também ajusta a fase no modo rápido.
         % Busca em grade para a fase inicial + refinamento conjunto [período, fase]
         ph_grid = linspace(0, 1, 241);
         ph_grid(end) = [];
