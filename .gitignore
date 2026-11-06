@@ -1,6 +1,4 @@
-.gitignore
 .vscode
 docs/table_reports
 tools/python/.venv
 octave-workspace
-/todo.md
