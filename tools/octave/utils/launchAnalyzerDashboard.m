@@ -197,23 +197,44 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
             curr_idx = sel_idx;
             fpath = fullfile(data_dir, mat_files(curr_idx).name);
             m_current = analyzeSingleCapture(fpath, VREF, LSB_MV, "opt");
-            default_win = min(numel(m_current.x_plot), max(128, round(2.5 * m_current.period_samples)));
-            set(sld_win, "max", numel(m_current.x_plot), "value", default_win);
-            set(sld_pan, "max", max(1, numel(m_current.x_plot) - 64), "value", 0);
+            nx = numel(m_current.x_plot);
+            default_win = min(max(128, round(2.5 * m_current.period_samples)), round(0.5 * nx));
+            set(sld_win, "min", 16, "max", nx, "value", default_win, ...
+                         "sliderstep", [max(1 / nx, 0.01), 0.10]);
+            init_max_pan = max(1, nx - default_win);
+            set(sld_pan, "min", 0, "max", init_max_pan, "value", 0, ...
+                         "sliderstep", [max(1 / init_max_pan, 0.01), 0.10]);
+            prev_unit_mode = -1;
+            prev_pan_start = -1;
+            prev_win_len   = -1;
         end
 
         unit_mode = get(pop_unit, "value");
-        win_len = max(64, min(round(get(sld_win, "value")), numel(m_current.x_plot)));
-        max_pan = max(0, numel(m_current.x_plot) - win_len);
+        nx = numel(m_current.x_plot);
+        win_len = max(16, min(round(get(sld_win, "value")), nx));
+        max_pan = max(0, nx - win_len);
         pan_start = min(round(get(sld_pan, "value")), max_pan);
 
-        updateAnalyzerDashboard(m_current, unit_mode, pan_start, win_len, VREF, LSB_MV, ...
-                                ax_wave, h_ideal_cont, h_ideal_quant, h_wave, h_trig, ...
-                                ax_fft, h_fft_tri, h_fft_quant, h_fft_adc, h_fft_peak, ...
-                                ax_trans, h_trans_ideal, h_trans_fit, h_trans_real, ...
-                                ax_err, h_err_raw, h_err_intr, h_err_lim_p, h_err_lim_n, ...
-                                ax_dnl, h_dnl, ax_inl, h_inl, h_nonmono, ...
-                                txt_col1, txt_col2, txt_col3);
+        slider_max_pan = max(1, max_pan);
+        if abs(get(sld_pan, "max") - slider_max_pan) > 0.5
+            set(sld_pan, "max", slider_max_pan, "value", pan_start, ...
+                         "sliderstep", [max(1 / slider_max_pan, 0.01), 0.10]);
+        elseif get(sld_pan, "value") > max_pan
+            set(sld_pan, "value", pan_start);
+        end
+
+        if unit_mode ~= prev_unit_mode || pan_start ~= prev_pan_start || win_len ~= prev_win_len
+            updateAnalyzerDashboard(m_current, unit_mode, pan_start, win_len, VREF, LSB_MV, ...
+                                    ax_wave, h_ideal_cont, h_ideal_quant, h_wave, h_trig, ...
+                                    ax_fft, h_fft_tri, h_fft_quant, h_fft_adc, h_fft_peak, ...
+                                    ax_trans, h_trans_ideal, h_trans_fit, h_trans_real, ...
+                                    ax_err, h_err_raw, h_err_intr, h_err_lim_p, h_err_lim_n, ...
+                                    ax_dnl, h_dnl, ax_inl, h_inl, h_nonmono, ...
+                                    txt_col1, txt_col2, txt_col3);
+            prev_unit_mode = unit_mode;
+            prev_pan_start = pan_start;
+            prev_win_len   = win_len;
+        end
 
         if ishandle(btn_save) && get(btn_save, "value") == 1
             set(btn_save, "value", 0);
