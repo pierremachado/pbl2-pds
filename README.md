@@ -4,7 +4,7 @@
 
 Implementação em nível de registradores, aquisição determinística e análise estática/dinâmica do conversor analógico-digital (ADC) de **8 bits** do **ATmega2560 (Arduino Mega 2560)** em conjunto com o **GNU Octave**.
 
-> **Documento principal do projeto:** A fundamentação completa, metodologia, diagramas e discussão detalhada dos resultados encontram-se na apresentação finalizada em [**`docs/presentation/main.pdf`**](docs/presentation/main.pdf) (código-fonte em [`docs/presentation/main.tex`](docs/presentation/main.tex)). Este `README` reúne apenas um resumo enxuto da teoria, das decisões de arquitetura e de exemplos visuais.
+> **Documento principal do projeto:** A fundamentação completa, metodologia, diagramas e discussão detalhada dos resultados encontram-se na apresentação finalizada em [**`docs/presentation/main.pdf`**](docs/presentation/main.pdf) (código-fonte em [`docs/presentation/main.tex`](docs/presentation/main.tex)).
 
 ---
 
