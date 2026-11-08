@@ -109,8 +109,8 @@ No **GNU Octave**, a partir da raiz do repositório:
 ```octave
 addpath("tools/octave");
 
-adc_analyzer()                                  % Abrir o painel interativo
+adc_analyzer()                                 % Abrir o painel interativo
 adc_analyzer("adc_f05Hz_fs04000Hz_pre16.mat")  % Inspecionar uma captura específica
 adc_analyzer("batch")                          % Reprocessar todos os ensaios em lote
-uart_oscilloscope                              % Osciloscópio em tempo real (requer placa via USB)
+uart_oscilloscope                              % Osciloscópio em tempo real (requer placa via USB e pacote instrument-control)
 ```
