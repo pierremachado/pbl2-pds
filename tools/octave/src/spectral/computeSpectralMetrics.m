@@ -1,18 +1,28 @@
-function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, ref, err, LSB_MV)
+function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, ref, err, LSB_MV, wave_type)
     % =========================================================================
     % COMPUTESPECTRALMETRICS - Análise espectral tripla (FFT) e faixa dinâmica
     %
     % Executa a FFT com janela de Hann para:
     %   1. Sinal capturado pelo ADC (8 bits)
-    %   2. Sinal triangular ideal quantizado (256 níveis)
-    %   3. Sinal triangular contínuo puro
+    %   2. Sinal ideal quantizado (256 níveis)
+    %   3. Sinal contínuo puro da forma de onda selecionada
     % E calcula DR (Faixa Dinâmica), SINAD, SFDR, THD, ENOB e piso de ruído RMS,
-    % com estimativas adaptadas à triangular e máscaras em torno das harmônicas.
+    % com potência de fundo de escala, fator de crista e máscaras harmônicas
+    % adaptados à forma de onda (triangular, sine, sawtooth ou square).
     % =========================================================================
 
     if nargin < 6 || isempty(LSB_MV)
         LSB_MV = 10.0;
     end
+    if nargin < 7 || isempty(wave_type)
+        if isfield(ref, "wave_type") && ~isempty(ref.wave_type)
+            wave_type = ref.wave_type;
+        else
+            wave_type = "triangular";
+        end
+    end
+
+    wspec = getWaveformSpec(wave_type);
 
     samples = double(samples(:));
     N_fft = numel(samples);
@@ -43,14 +53,14 @@ function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, 
     mag_dbfs_quant = 20.0 * log10(max(mag_lin_quant / 127.5, 1e-6));
     phase_deg_quant = rad2deg(angle(Yq_half));
 
-    % 3. FFT do Sinal Triangular Contínuo Normal (sem quantização)
+    % 3. FFT do Sinal Contínuo Ideal de Referência (sem quantização)
     st_ac = ref.ideal_cont_full - mean(ref.ideal_cont_full);
     Yt_fft = fft(st_ac .* win_hann);
     Yt_half = Yt_fft(1:half_N);
-    mag_lin_tri = abs(Yt_half) / (N_fft * coherent_gain / 2.0);
-    mag_lin_tri(1) = abs(Yt_half(1)) / (N_fft * coherent_gain);
-    mag_dbfs_tri = 20.0 * log10(max(mag_lin_tri / 127.5, 1e-6));
-    phase_deg_tri = rad2deg(angle(Yt_half));
+    mag_lin_ref = abs(Yt_half) / (N_fft * coherent_gain / 2.0);
+    mag_lin_ref(1) = abs(Yt_half(1)) / (N_fft * coherent_gain);
+    mag_dbfs_ref = 20.0 * log10(max(mag_lin_ref / 127.5, 1e-6));
+    phase_deg_ref = rad2deg(angle(Yt_half));
 
     % Identificação do bin fundamental na FFT
     [~, fund_bin] = max(mag_lin(2:end));
@@ -63,7 +73,7 @@ function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, 
         sig_bins = fund_bin;
     end
 
-    % Métricas clássicas (tratando apenas a fundamental como sinal)
+    % Métricas clássicas (tratando apenas a fundamental como sinal — padrão IEEE para senoide)
     fund_lobe = max(2, fund_bin - 3):min(half_N, fund_bin + 3);
     psd_bins = (mag_lin .^ 2);
     P_signal = sum(psd_bins(fund_lobe));
@@ -86,11 +96,11 @@ function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, 
     sfdr_dbc = fund_mag_dbfs - max_spur_dbfs;
     sinad_db = 10.0 * log10(max(P_signal, 1e-12) / max(P_nad, 1e-12));
     thd_db   = 10.0 * log10(max(P_harm, 1e-12) / max(P_signal, 1e-12));
-    enob_bits = max(0, (sinad_db - 1.76) / 6.02);
+    enob_bits = max(0, (sinad_db - 1.7609) / 6.0206);
     P_noise_only = max(1e-12, P_nad - P_harm);
     dr_db_legacy = 10.0 * log10((127.5 ^ 2) / P_noise_only);
 
-    % Métricas espectrais e de faixa dinâmica específicas para onda triangular
+    % Métricas espectrais e de faixa dinâmica adaptadas à forma de onda
     P_parseval_adc   = (abs(Y_half) .^ 2) / (N_fft^2 * win_power_gain);
     P_parseval_adc(2:end-1) = 2.0 * P_parseval_adc(2:end-1);
 
@@ -111,70 +121,89 @@ function spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, 
         P_spec_noise_adc   = sum(P_parseval_adc(pure_noise_mask)) * (half_N / sum(pure_noise_mask));
         P_spec_noise_quant = sum(P_parseval_quant(pure_noise_mask)) * (half_N / sum(pure_noise_mask));
     else
-        P_spec_noise_adc   = mean(err.err_intrinsic_lsb .^ 2);
+        P_spec_noise_adc   = err.rmse_intrinsic_lsb ^ 2;
         P_spec_noise_quant = mean(err.err_ideal_quant_lsb .^ 2);
     end
 
     noise_floor_rms_lsb = sqrt(P_spec_noise_adc);
     noise_floor_rms_mv  = noise_floor_rms_lsb * LSB_MV;
 
-    P_fs_sin = (127.5 ^ 2) / 2.0;
-    P_fs_tri = (127.5 ^ 2) / 3.0;
+    P_fs_sin  = (127.5 ^ 2) / 2.0;
+    P_fs_wave = wspec.p_fs;
 
     dr_db       = 10.0 * log10(P_fs_sin / max(1e-12, P_spec_noise_adc));
-    dr_tri_db   = 10.0 * log10(P_fs_tri / max(1e-12, P_spec_noise_adc));
+    dr_wave_db  = 10.0 * log10(P_fs_wave / max(1e-12, P_spec_noise_adc));
     dr_quant_db = 10.0 * log10(P_fs_sin / max(1e-12, P_spec_noise_quant));
 
-    P_sig_tri_actual    = var(ref.ideal_cont_plot);
-    sinad_tri_total_db  = 10.0 * log10(P_sig_tri_actual / max(1e-12, mean(err.err_vs_cont_lsb .^ 2)));
-    sinad_tri_intrin_db = 10.0 * log10(P_sig_tri_actual / max(1e-12, mean(err.err_intrinsic_lsb .^ 2)));
-    sqnr_ideal_quant_db = 10.0 * log10(P_sig_tri_actual / max(1e-12, mean(err.err_ideal_quant_lsb .^ 2)));
+    P_sig_wave_actual    = var(ref.ideal_cont_plot);
+    sinad_wave_total_db  = 10.0 * log10(P_sig_wave_actual / max(1e-12, mean(err.err_vs_cont_lsb .^ 2)));
+    sinad_wave_intrin_db = 10.0 * log10(P_sig_wave_actual / max(1e-12, err.rmse_intrinsic_lsb ^ 2));
+    sqnr_ideal_quant_db  = 10.0 * log10(P_sig_wave_actual / max(1e-12, mean(err.err_ideal_quant_lsb .^ 2)));
 
-    enob_tri_total_bits  = max(0, (sinad_tri_total_db - 1.76 + 1.25) / 6.02);
-    enob_tri_intrin_bits = max(0, (sinad_tri_intrin_db - 1.76 + 1.25) / 6.02);
-    enob_ideal_quant     = max(0, (sqnr_ideal_quant_db - 1.76 + 1.25) / 6.02);
+    enob_offset_db = wspec.enob_offset_db;
+    enob_wave_total_bits  = max(0, (sinad_wave_total_db - enob_offset_db) / 6.0206);
+    enob_wave_intrin_bits = max(0, (sinad_wave_intrin_db - enob_offset_db) / 6.0206);
+    enob_ideal_quant      = max(0, (sqnr_ideal_quant_db - enob_offset_db) / 6.0206);
 
-    non_tri_mask = true(half_N, 1);
-    non_tri_mask(1:3) = false;
-    for h_ord = 1:2:max_harm_order
+    % Máscara de harmônicas intrínsecas da forma de onda para SFDR livre da onda
+    non_wave_mask = true(half_N, 1);
+    non_wave_mask(1:3) = false;
+    if strcmp(wspec.harmonic_mode, "fundamental")
+        harm_list = 1;
+    elseif strcmp(wspec.harmonic_mode, "odd")
+        harm_list = 1:2:max_harm_order;
+    else
+        harm_list = 1:max_harm_order;
+    end
+
+    for h_ord = harm_list
         exact_bin = 1.0 + h_ord * freq_hz * N_fft / actual_sampling_frequency;
         b_lo = max(2, floor(exact_bin - 3));
         b_hi = min(half_N, ceil(exact_bin + 3));
-        non_tri_mask(b_lo:b_hi) = false;
+        non_wave_mask(b_lo:b_hi) = false;
     end
-    if any(non_tri_mask)
-        sfdr_tri_dbc = fund_mag_dbfs - max(mag_dbfs(non_tri_mask));
+    if any(non_wave_mask)
+        sfdr_wave_dbc = fund_mag_dbfs - max(mag_dbfs(non_wave_mask));
     else
-        sfdr_tri_dbc = sfdr_dbc;
+        sfdr_wave_dbc = sfdr_dbc;
     end
 
     spec = struct();
-    spec.freq_axis            = freq_axis;
-    spec.mag_dbfs             = mag_dbfs;
-    spec.mag_dbfs_quant       = mag_dbfs_quant;
-    spec.mag_dbfs_tri         = mag_dbfs_tri;
-    spec.phase_deg            = phase_deg;
-    spec.phase_deg_quant      = phase_deg_quant;
-    spec.phase_deg_tri        = phase_deg_tri;
-    spec.fund_bin             = fund_bin;
-    spec.fund_freq_fft        = fund_freq_fft;
-    spec.fund_mag_dbfs        = fund_mag_dbfs;
-    spec.sig_bins             = sig_bins;
-    spec.dr_db                = dr_db;
-    spec.dr_tri_db            = dr_tri_db;
-    spec.dr_quant_db          = dr_quant_db;
-    spec.dr_db_legacy         = dr_db_legacy;
-    spec.sfdr_dbc             = sfdr_dbc;
-    spec.sfdr_tri_dbc         = sfdr_tri_dbc;
-    spec.sinad_db             = sinad_db;
-    spec.thd_db               = thd_db;
-    spec.enob_bits            = enob_bits;
-    spec.sinad_tri_total_db   = sinad_tri_total_db;
-    spec.sinad_tri_intrin_db  = sinad_tri_intrin_db;
-    spec.sqnr_ideal_quant_db  = sqnr_ideal_quant_db;
-    spec.enob_tri_total_bits  = enob_tri_total_bits;
-    spec.enob_tri_intrin_bits = enob_tri_intrin_bits;
-    spec.enob_ideal_quant     = enob_ideal_quant;
-    spec.noise_floor_rms_lsb  = noise_floor_rms_lsb;
-    spec.noise_floor_rms_mv   = noise_floor_rms_mv;
+    spec.wave_type             = wspec.type;
+    spec.freq_axis             = freq_axis;
+    spec.mag_dbfs              = mag_dbfs;
+    spec.mag_dbfs_quant        = mag_dbfs_quant;
+    spec.mag_dbfs_ref          = mag_dbfs_ref;
+    spec.mag_dbfs_tri          = mag_dbfs_ref; % Alias de retrocompatibilidade
+    spec.phase_deg             = phase_deg;
+    spec.phase_deg_quant       = phase_deg_quant;
+    spec.phase_deg_ref         = phase_deg_ref;
+    spec.phase_deg_tri         = phase_deg_ref; % Alias de retrocompatibilidade
+    spec.fund_bin              = fund_bin;
+    spec.fund_freq_fft         = fund_freq_fft;
+    spec.fund_mag_dbfs         = fund_mag_dbfs;
+    spec.sig_bins              = sig_bins;
+    spec.dr_db                 = dr_db;
+    spec.dr_wave_db            = dr_wave_db;
+    spec.dr_tri_db             = dr_wave_db; % Alias de retrocompatibilidade
+    spec.dr_quant_db           = dr_quant_db;
+    spec.dr_db_legacy          = dr_db_legacy;
+    spec.sfdr_dbc              = sfdr_dbc;
+    spec.sfdr_wave_dbc         = sfdr_wave_dbc;
+    spec.sfdr_tri_dbc          = sfdr_wave_dbc; % Alias de retrocompatibilidade
+    spec.sinad_db              = sinad_db;
+    spec.thd_db                = thd_db;
+    spec.enob_bits             = enob_bits;
+    spec.sinad_wave_total_db   = sinad_wave_total_db;
+    spec.sinad_wave_intrin_db  = sinad_wave_intrin_db;
+    spec.sinad_tri_total_db    = sinad_wave_total_db;  % Alias de retrocompatibilidade
+    spec.sinad_tri_intrin_db   = sinad_wave_intrin_db; % Alias de retrocompatibilidade
+    spec.sqnr_ideal_quant_db   = sqnr_ideal_quant_db;
+    spec.enob_wave_total_bits  = enob_wave_total_bits;
+    spec.enob_wave_intrin_bits = enob_wave_intrin_bits;
+    spec.enob_tri_total_bits   = enob_wave_total_bits;  % Alias de retrocompatibilidade
+    spec.enob_tri_intrin_bits  = enob_wave_intrin_bits; % Alias de retrocompatibilidade
+    spec.enob_ideal_quant      = enob_ideal_quant;
+    spec.noise_floor_rms_lsb   = noise_floor_rms_lsb;
+    spec.noise_floor_rms_mv    = noise_floor_rms_mv;
 end

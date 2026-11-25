@@ -1,4 +1,4 @@
-function [samples, actual_sampling_frequency, status, file_path] = uart_capture(sampling_frequency, adc_prescaler, sample_amount, serial_target, auto_save, show_plot)
+function [samples, actual_sampling_frequency, status, file_path] = uart_capture(sampling_frequency, adc_prescaler, sample_amount, serial_target, auto_save, show_plot, wave_type)
     % =========================================================================
     % UART_CAPTURE - Captura de bloco de amostras do ADC (ATmega2560)
     %
@@ -6,10 +6,10 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
     %   uart_capture
     %   -> Usa os parâmetros default abaixo, abre a serial, captura 4096
     %      amostras, calcula o período/frequência medidos, salva automaticamente
-    %      em /data/sample_YYYYMMDD_HHMMSS.mat e plota o sinal capturado.
+    %      em /data/sample_YYYYMMDD_HHMMSS.mat (com wave_type) e plota o sinal.
     %
     % Uso integrado (chamado pelo uart_oscilloscope.m):
-    %   [samples, fs_eff, status, file_path] = uart_capture(fs, prescaler, N, s, auto_save, false)
+    %   [samples, fs_eff, status, file_path] = uart_capture(fs, prescaler, N, s, auto_save, false, wave_type)
     %   -> Reutiliza a porta serial aberta 's' para captura rápida em tempo real.
     % =========================================================================
 
@@ -29,6 +29,7 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
     default_sampling_frequency = 2^13;
     default_adc_prescaler      = 16;
     default_sample_amount      = 4096;
+    default_wave_type          = "triangular";
 
     if nargin < 1 || isempty(sampling_frequency)
         sampling_frequency = default_sampling_frequency;
@@ -49,6 +50,18 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
     if nargin < 6 || isempty(show_plot)
         % Plota automaticamente quando executado de forma autônoma sem saídas
         show_plot = (nargout == 0) && (nargin < 4);
+    end
+    if nargin < 7 || isempty(wave_type)
+        wave_type = default_wave_type;
+    end
+    no_ideal = any(strcmpi(strtrim(char(wave_type)), {"none", "off", "desligado", "desativado"}));
+    if no_ideal
+        wave_type = "none";
+        wave_label = "Desligado";
+    else
+        wspec = getWaveformSpec(wave_type);
+        wave_type = wspec.type;
+        wave_label = wspec.label;
     end
 
     % --- VALIDAÇÃO DE PARÂMETROS DE HARDWARE E FIRMWARE ---
@@ -133,14 +146,14 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
 
         % --- CÁLCULO ESSENCIAL DO PERÍODO E FREQUÊNCIA DO SINAL ---
         trig = detectSignalTrigger(samples);
-        per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, "trig");
+        per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, "trig", wave_type);
         period_samples   = per.period_samples;
         period_sec       = per.period_sec;
         signal_frequency = per.signal_frequency;
 
         if own_serial
-            printf("Leitura concluída! f = %.2f Hz | T = %.2f ms (%.1f am/ciclo)\n", ...
-                   signal_frequency, period_sec * 1e3, period_samples);
+            printf("Leitura concluída! Onda = %s | f = %.2f Hz | T = %.2f ms (%.1f am/ciclo)\n", ...
+                   wave_label, signal_frequency, period_sec * 1e3, period_samples);
         end
 
         % --- SALVAMENTO AUTOMÁTICO EM /data (SEM INPUT NO TERMINAL) ---
@@ -148,12 +161,22 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
             if ~exist(output_dir, "dir")
                 mkdir(output_dir);
             end
-            file_name = ["sample_", datestr(now, "yyyymmdd_HHMMSS_FFF"), ".mat"];
-            file_path = fullfile(output_dir, file_name);
-            save("-v7", file_path, ...
-                 "samples", "sampling_frequency", "actual_sampling_frequency", ...
-                 "adc_prescaler", "sample_amount", ...
-                 "signal_frequency", "period_samples", "period_sec");
+            if no_ideal
+                file_name = ["sample_", datestr(now, "yyyymmdd_HHMMSS_FFF"), ".mat"];
+                file_path = fullfile(output_dir, file_name);
+                save("-v7", file_path, ...
+                     "samples", "sampling_frequency", "actual_sampling_frequency", ...
+                     "adc_prescaler", "sample_amount", ...
+                     "signal_frequency", "period_samples", "period_sec");
+            else
+                file_name = ["sample_", wave_type, "_", datestr(now, "yyyymmdd_HHMMSS_FFF"), ".mat"];
+                file_path = fullfile(output_dir, file_name);
+                save("-v7", file_path, ...
+                     "wave_type", ...
+                     "samples", "sampling_frequency", "actual_sampling_frequency", ...
+                     "adc_prescaler", "sample_amount", ...
+                     "signal_frequency", "period_samples", "period_sec");
+            end
             printf("Amostra salva automaticamente em: %s\n", file_path);
         end
 
@@ -162,8 +185,8 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
             figure("name", "Captura UART - ATmega2560", "numbertitle", "off");
             stairs(0:(sample_amount - 1), samples);
             grid on;
-            title(sprintf("Sinal Adquirido via ADC (f = %.2f Hz | fs = %.1f Hz | Prescaler = %d)", ...
-                          signal_frequency, actual_sampling_frequency, adc_prescaler));
+            title(sprintf("Sinal Adquirido via ADC (%s | f = %.2f Hz | fs = %.1f Hz | Prescaler = %d)", ...
+                          wave_label, signal_frequency, actual_sampling_frequency, adc_prescaler));
             xlabel(sprintf("Índice da Amostra (0 a %d)", sample_amount - 1));
             ylabel("Nível Digital de Quantização (0 a 255)");
             ylim([-10, 265]);

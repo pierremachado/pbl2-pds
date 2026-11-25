@@ -1,9 +1,11 @@
-function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode)
+function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     % =========================================================================
     % ANALYZESINGLECAPTURE - Condiciona os dados e calcula todas as métricas de um .mat
     %
     % Orquestra os módulos de src/ (triggering, conditioning, spectral, linearity)
     % e empacota todos os resultados na estrutura padronizada 'm'.
+    % Se wave_type não for fornecido, usa o campo 'wave_type' salvo no .mat
+    % (quando existir) ou "triangular" como padrão.
     % =========================================================================
 
     if nargin < 2 || isempty(VREF)
@@ -15,12 +17,28 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode)
     if nargin < 4 || isempty(align_mode)
         align_mode = "opt";
     end
+    if nargin < 5
+        wave_type = "";
+    end
 
     raw = load(mat_path);
     [~, fname, fext] = fileparts(mat_path);
+
+    if isempty(wave_type)
+        if isfield(raw, "wave_type") && ~isempty(raw.wave_type)
+            wave_type = raw.wave_type;
+        else
+            wave_type = "triangular";
+        end
+    end
+    wspec = getWaveformSpec(wave_type);
+
     m = struct();
-    m.file_name = [fname, fext];
-    m.file_path = mat_path;
+    m.file_name       = [fname, fext];
+    m.file_path       = mat_path;
+    m.wave_type       = wspec.type;
+    m.wave_label      = wspec.label;
+    m.wave_short      = wspec.short_label;
     m.was_full_format = isfield(raw, "rmse_lsb") && isfield(raw, "dnl") && isfield(raw, "dr_db");
 
     % 1. Extração das variáveis básicas da captura
@@ -54,11 +72,11 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode)
 
     % 2. Execução encadeada dos módulos de processamento em src/
     trig = detectSignalTrigger(samples);
-    per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode);
-    ref  = generateIdealReference(samples, trig, per, VREF);
-    err  = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV);
-    spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, ref, err, LSB_MV);
-    lin  = computeHistogramLinearity(samples, trig, per, ref);
+    per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode, wspec.type);
+    ref  = generateIdealReference(samples, trig, per, VREF, wspec.type);
+    err  = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wspec.type);
+    spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, ref, err, LSB_MV, wspec.type);
+    lin  = computeHistogramLinearity(samples, trig, per, ref, wspec.type);
 
     % 3. Empacotamento unificado na estrutura 'm'
     m.samples            = samples;
@@ -131,30 +149,40 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode)
     m.freq_axis       = spec.freq_axis;
     m.mag_dbfs        = spec.mag_dbfs;
     m.mag_dbfs_quant  = spec.mag_dbfs_quant;
+    m.mag_dbfs_ref    = spec.mag_dbfs_ref;
     m.mag_dbfs_tri    = spec.mag_dbfs_tri;
     m.phase_deg       = spec.phase_deg;
     m.phase_deg_quant = spec.phase_deg_quant;
+    m.phase_deg_ref   = spec.phase_deg_ref;
     m.phase_deg_tri   = spec.phase_deg_tri;
     m.sig_bins        = spec.sig_bins;
 
-    m.dr_db                = spec.dr_db;
-    m.dr_tri_db            = spec.dr_tri_db;
-    m.dr_quant_db          = spec.dr_quant_db;
-    m.dr_db_legacy         = spec.dr_db_legacy;
-    m.sfdr_dbc             = spec.sfdr_dbc;
-    m.sfdr_tri_dbc         = spec.sfdr_tri_dbc;
-    m.sinad_db             = spec.sinad_db;
-    m.thd_db               = spec.thd_db;
-    m.enob_bits            = spec.enob_bits;
-    m.sinad_tri_total_db   = spec.sinad_tri_total_db;
-    m.sinad_tri_intrin_db  = spec.sinad_tri_intrin_db;
-    m.sqnr_ideal_quant_db  = spec.sqnr_ideal_quant_db;
-    m.enob_tri_total_bits  = spec.enob_tri_total_bits;
-    m.enob_tri_intrin_bits = spec.enob_tri_intrin_bits;
-    m.enob_ideal_quant     = spec.enob_ideal_quant;
-    m.noise_floor_rms_lsb  = spec.noise_floor_rms_lsb;
-    m.noise_floor_rms_mv   = spec.noise_floor_rms_mv;
+    m.dr_db                 = spec.dr_db;
+    m.dr_wave_db            = spec.dr_wave_db;
+    m.dr_tri_db             = spec.dr_tri_db;
+    m.dr_quant_db           = spec.dr_quant_db;
+    m.dr_db_legacy          = spec.dr_db_legacy;
+    m.sfdr_dbc              = spec.sfdr_dbc;
+    m.sfdr_wave_dbc         = spec.sfdr_wave_dbc;
+    m.sfdr_tri_dbc          = spec.sfdr_tri_dbc;
+    m.sinad_db              = spec.sinad_db;
+    m.thd_db                = spec.thd_db;
+    m.enob_bits             = spec.enob_bits;
+    m.sinad_wave_total_db   = spec.sinad_wave_total_db;
+    m.sinad_wave_intrin_db  = spec.sinad_wave_intrin_db;
+    m.sinad_tri_total_db    = spec.sinad_tri_total_db;
+    m.sinad_tri_intrin_db   = spec.sinad_tri_intrin_db;
+    m.sqnr_ideal_quant_db   = spec.sqnr_ideal_quant_db;
+    m.enob_wave_total_bits  = spec.enob_wave_total_bits;
+    m.enob_wave_intrin_bits = spec.enob_wave_intrin_bits;
+    m.enob_tri_total_bits   = spec.enob_tri_total_bits;
+    m.enob_tri_intrin_bits  = spec.enob_tri_intrin_bits;
+    m.enob_ideal_quant      = spec.enob_ideal_quant;
+    m.noise_floor_rms_lsb   = spec.noise_floor_rms_lsb;
+    m.noise_floor_rms_mv    = spec.noise_floor_rms_mv;
 
+    m.linearity_valid    = lin.is_valid;
+    m.hist_mode          = lin.hist_mode;
     m.codes_axis         = lin.codes_axis;
     m.code_counts        = lin.code_counts;
     m.expected_hits      = lin.expected_hits;

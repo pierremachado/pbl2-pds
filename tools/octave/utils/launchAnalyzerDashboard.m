@@ -1,9 +1,24 @@
-function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, output_dir, VREF, LSB_MV)
+function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, output_dir, VREF, LSB_MV, init_wave_type)
     % =========================================================================
     % LAUNCHANALYZERDASHBOARD - Painel Digital Interativo do Analisador de ADC
     % =========================================================================
 
+    if nargin < 7
+        init_wave_type = "";
+    end
+
     file_names = {mat_files.name};
+    wave_types  = {"triangular", "sine", "sawtooth", "square"};
+    wave_labels = {"Triangular", "Senoidal", "Dente de Serra", "Quadrada"};
+
+    init_wave_idx = 1;
+    if ~isempty(init_wave_type)
+        w0 = getWaveformSpec(init_wave_type);
+        idx_match = find(strcmp(wave_types, w0.type), 1);
+        if ~isempty(idx_match)
+            init_wave_idx = idx_match;
+        end
+    end
 
     fig = figure("name", "Analisador de Dados do ADC (ATmega2560 | Vref = 2.56 V | 8 bits = 256 níveis)", ...
                  "numbertitle", "off", ...
@@ -11,7 +26,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                  "color", [0.95, 0.96, 0.98], ...
                  "position", [20, 20, 1520, 880]);
 
-    % 1. GRÁFICO SUPERIOR ESQUERDO: Sinal Capturado (8b) vs Ideal Quantizado (256 níveis) vs Triangular Ideal
+    % 1. GRÁFICO SUPERIOR ESQUERDO: Sinal Capturado (8b) vs Ideal Quantizado (256 níveis) vs Ideal Contínuo
     ax_wave = axes("parent", fig, "position", [0.04, 0.58, 0.44, 0.36]);
     hold(ax_wave, "on");
     h_ideal_cont  = plot(ax_wave, [0, 1], [0, 0], "--", "color", [0.15, 0.65, 0.25], "linewidth", 1.3);
@@ -22,14 +37,14 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
     grid(ax_wave, "on");
     xlabel(ax_wave, "Índice da Amostra (após Trigger)");
     ylabel(ax_wave, "Código ADC (0 a 255)");
-    title(ax_wave, "1. Sinal 8 bits Capturado vs. Ideal Quantizado (256 níveis) vs. Triangular Contínuo", "interpreter", "none");
-    legend(ax_wave, {"Triangular Contínuo", "Ideal Quantizado (256 nív.)", "Capturado (ADC 8b)", "Trigger"}, ...
+    title(ax_wave, "1. Sinal 8 bits Capturado vs. Ideal Quantizado (256 níveis) vs. Referência Ideal", "interpreter", "none");
+    legend(ax_wave, {"Ideal Contínuo", "Ideal Quantizado (256 nív.)", "Capturado (ADC 8b)", "Trigger"}, ...
            "location", "northeast", "fontsize", 8);
 
-    % 2. GRÁFICO SUPERIOR CENTRAL: FFT Tripla (ADC vs Quantizado Ideal vs Triangular Normal)
+    % 2. GRÁFICO SUPERIOR CENTRAL: FFT Tripla (ADC vs Quantizado Ideal vs Referência Contínua)
     ax_fft = axes("parent", fig, "position", [0.53, 0.58, 0.21, 0.36]);
     hold(ax_fft, "on");
-    h_fft_tri   = plot(ax_fft, [0, 1], [-120, -120], "--", "color", [0.15, 0.65, 0.25], "linewidth", 1.3);
+    h_fft_ref   = plot(ax_fft, [0, 1], [-120, -120], "--", "color", [0.15, 0.65, 0.25], "linewidth", 1.3);
     h_fft_quant = plot(ax_fft, [0, 1], [-120, -120], "-",  "color", [0.95, 0.55, 0.10], "linewidth", 1.0);
     h_fft_adc   = plot(ax_fft, [0, 1], [-120, -120], "-",  "color", [0.05, 0.30, 0.85], "linewidth", 1.1);
     h_fft_peak  = plot(ax_fft, 0, 0, "ro", "markersize", 6, "linewidth", 1.5);
@@ -38,8 +53,8 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
     ylim(ax_fft, [-105, 5]);
     xlabel(ax_fft, "Frequência (Hz)");
     ylabel(ax_fft, "Magnitude (dBFS)");
-    title(ax_fft, "2. FFT: ADC vs. Quantizado Ideal vs. Triangular");
-    legend(ax_fft, {"FFT Triangular Puro", "FFT Quantizado 256n", "FFT ADC Capturado", "Fundamental"}, ...
+    title(ax_fft, "2. FFT: ADC vs. Quantizado Ideal vs. Referência");
+    legend(ax_fft, {"FFT Ideal Puro", "FFT Quantizado 256n", "FFT ADC Capturado", "Fundamental"}, ...
            "location", "northeast", "fontsize", 7.5);
 
     % 3. GRÁFICO SUPERIOR DIREITO: Curva de Quantização Real vs Ideal + Ganho/Offset
@@ -134,7 +149,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                          "foregroundcolor", [0.45, 0.90, 1.00], ...
                          "string", "");
 
-    % 8. CONTROLES INFERIORES (Seletor de Arquivo, Unidade, Salvar e Lote)
+    % 8. CONTROLES INFERIORES (Seletor de Arquivo, Forma de Onda, Unidade, Salvar e Lote)
     uicontrol(fig, "style", "text", "units", "normalized", ...
               "position", [0.04, 0.045, 0.05, 0.028], ...
               "backgroundcolor", [0.95, 0.96, 0.98], "string", "Arquivo:");
@@ -158,6 +173,14 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                          "string", {"Código ADC (0..255)", "Tensão (0..2.56 V)", "Erro Relativo (%FSR)"}, ...
                          "value", 1);
 
+    uicontrol(fig, "style", "text", "units", "normalized", ...
+              "position", [0.04, 0.008, 0.05, 0.028], ...
+              "backgroundcolor", [0.95, 0.96, 0.98], "string", "Onda:");
+
+    pop_wave = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
+                         "position", [0.09, 0.008, 0.16, 0.030], ...
+                         "string", wave_labels, "value", init_wave_idx);
+
     btn_save = uicontrol(fig, "style", "togglebutton", "units", "normalized", ...
                          "position", [0.325, 0.008, 0.075, 0.032], ...
                          "backgroundcolor", [0.20, 0.55, 0.30], ...
@@ -171,6 +194,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                           "string", "RELATÓRIO LOTE", "value", 0);
 
     curr_idx = -1;
+    curr_wave_idx = -1;
     m_current = struct();
 
     set(btn_prev, "callback", @(~, ~) step_file(pop_file, -1, numel(mat_files)));
@@ -178,11 +202,16 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
 
     while ishandle(fig)
         sel_idx = get(pop_file, "value");
-        file_changed = sel_idx ~= curr_idx;
-        if file_changed
+        sel_wave_idx = get(pop_wave, "value");
+        file_changed = (sel_idx ~= curr_idx);
+        wave_changed = (sel_wave_idx ~= curr_wave_idx);
+
+        if file_changed || wave_changed
             curr_idx = sel_idx;
+            curr_wave_idx = sel_wave_idx;
             fpath = fullfile(data_dir, mat_files(curr_idx).name);
-            m_current = analyzeSingleCapture(fpath, VREF, LSB_MV, "opt");
+            selected_wave = wave_types{curr_wave_idx};
+            m_current = analyzeSingleCapture(fpath, VREF, LSB_MV, "opt", selected_wave);
             nx = numel(m_current.x_plot);
             default_win = min(max(128, round(2.5 * m_current.period_samples)), round(0.5 * nx));
             prev_unit_mode = -1;
@@ -201,7 +230,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
         if unit_mode ~= prev_unit_mode
             updateAnalyzerDashboard(m_current, unit_mode, pan_start, win_len, VREF, LSB_MV, ...
                                     ax_wave, h_ideal_cont, h_ideal_quant, h_wave, h_trig, ...
-                                    ax_fft, h_fft_tri, h_fft_quant, h_fft_adc, h_fft_peak, ...
+                                    ax_fft, h_fft_ref, h_fft_quant, h_fft_adc, h_fft_peak, ...
                                     ax_trans, h_trans_ideal, h_trans_fit, h_trans_real, ...
                                     ax_err, h_err_raw, h_err_intr, h_err_lim_p, h_err_lim_n, ...
                                     ax_dnl, h_dnl, ax_inl, h_inl, h_nonmono, ...
@@ -218,7 +247,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
 
         if ishandle(btn_batch) && get(btn_batch, "value") == 1
             set(btn_batch, "value", 0);
-            runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_MV, false);
+            runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_MV, false, wave_types{curr_wave_idx});
         end
 
         drawnow;

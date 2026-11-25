@@ -1,22 +1,27 @@
-function results = adc_analyzer(mode_or_file, save_updated_mat)
+function results = adc_analyzer(mode_or_file, save_updated_mat, wave_type)
     % =========================================================================
     % ADC_ANALYZER - Orquestrador de Condicionamento e Análise Offline do ADC
     % Configurado para ATmega2560 com Vref = 2.56 V (8 bits = 256 níveis)
     %
     % Arquitetura modular:
     %   - src/triggering/   : detectSignalTrigger, estimateSignalPeriod
-    %   - src/conditioning/ : generateIdealReference, computeStaticAndTimeErrors
+    %   - src/conditioning/ : getWaveformSpec, generateIdealReference,
+    %                         computeStaticAndTimeErrors
     %   - src/spectral/     : computeSpectralMetrics (FFT tripla, DR, SINAD, ENOB)
     %   - src/linearity/    : computeHistogramLinearity (DNL, INL, Missing Codes)
     %   - utils/            : analyzeSingleCapture, launchAnalyzerDashboard,
     %                         runBatchAnalysis, exportSingleDashboardPng, etc.
     %
     % Formas de uso no GNU Octave:
-    %   adc_analyzer()               -> Abre o Painel Interativo Completo (GUI)
-    %   adc_analyzer("batch")        -> Analisa todos os .mat de /data, gera CSV
-    %                                   e painéis individuais em /outputs
-    %   adc_analyzer("arquivo.mat")  -> Abre o painel focado no arquivo indicado
-    %   adc_analyzer("batch", true)  -> Lote + enriquece todos os .mat com métricas
+    %   adc_analyzer()                            -> Painel Interativo (GUI)
+    %   adc_analyzer("batch")                     -> Lote (usa wave_type do .mat ou triangular)
+    %   adc_analyzer("batch", false, "sine")      -> Lote forçando forma senoidal
+    %   adc_analyzer("arquivo.mat")               -> Painel focado no arquivo
+    %   adc_analyzer("arquivo.mat", false, "sawtooth") -> Painel com forma inicial
+    %   adc_analyzer("batch", true)               -> Lote + enriquece todos os .mat
+    %
+    % Formas de onda aceitas em wave_type:
+    %   "triangular" | "sine" ("senoidal") | "sawtooth" ("dente de serra") | "square" ("quadrada")
     % =========================================================================
 
     if nargin < 1 || isempty(mode_or_file)
@@ -24,6 +29,9 @@ function results = adc_analyzer(mode_or_file, save_updated_mat)
     end
     if nargin < 2 || isempty(save_updated_mat)
         save_updated_mat = false;
+    end
+    if nargin < 3
+        wave_type = "";
     end
 
     % Configuração de diretórios e paths dos submódulos (src/ e utils/)
@@ -54,7 +62,7 @@ function results = adc_analyzer(mode_or_file, save_updated_mat)
 
     % 1. Modo Lote (Batch): processa todos os arquivos, exporta CSV e gráficos
     if strcmpi(mode_or_file, "batch")
-        results = runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_MV, save_updated_mat);
+        results = runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_MV, save_updated_mat, wave_type);
         return;
     end
 
@@ -76,9 +84,9 @@ function results = adc_analyzer(mode_or_file, save_updated_mat)
 
     % 3. Abre o Painel Digital Interativo (ou retorna a estrutura se sem display)
     if ~isempty(available_graphics_toolkits())
-        results = launchAnalyzerDashboard(mat_files, init_file_idx, data_dir, output_dir, VREF, LSB_MV);
+        results = launchAnalyzerDashboard(mat_files, init_file_idx, data_dir, output_dir, VREF, LSB_MV, wave_type);
     else
         target_path = fullfile(data_dir, mat_files(init_file_idx).name);
-        results = analyzeSingleCapture(target_path, VREF, LSB_MV, "opt");
+        results = analyzeSingleCapture(target_path, VREF, LSB_MV, "opt", wave_type);
     end
 end
