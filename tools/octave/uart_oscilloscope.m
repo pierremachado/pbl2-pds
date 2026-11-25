@@ -29,8 +29,8 @@ sample_amount      = 4096;
 VREF               = 2.56;
 LSB_MV             = (VREF / 256.0) * 1e3;
 
-wave_types  = {"none", "triangular", "sine", "sawtooth", "square"};
-wave_labels = {"Desligado", "Triangular", "Senoidal", "Dente de Serra", "Quadrada"};
+wave_types  = {"triangular", "sine", "sawtooth", "square"};
+wave_labels = {"Triangular", "Senoidal", "Dente de Serra", "Quadrada"};
 
 % --- ABERTURA DA PORTA SERIAL ---
 disp("Conectando à porta serial...");

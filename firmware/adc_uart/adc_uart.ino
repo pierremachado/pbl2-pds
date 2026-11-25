@@ -69,7 +69,7 @@ void ADC_Init(uint8_t channel) {
   // REFS1:0 = 11: referência interna de 2,56 V
   // ADLAR = 1: resultado justificado à esquerda, os 8 bits mais significativos ficam em ADCH
   // MUX2:0: três bits menos significativos do canal
-  ADMUX = (1 << REFS1) | (1 << REFS0) | (1 << ADLAR) | (channel & 0b111);
+  ADMUX = (0 << REFS1) | (1 << REFS0) | (1 << ADLAR) | (channel & 0b111);
 
   // limpa ADCSRB (ADTS2:0 = 000, ACME = 0) e define MUX5 = 1 para canais 8 a 15
   ADCSRB = (channel & 0b1000) ? (1 << MUX5) : 0;
