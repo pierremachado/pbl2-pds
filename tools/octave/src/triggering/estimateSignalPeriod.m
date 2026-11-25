@@ -90,20 +90,22 @@ function per = estimateSignalPeriod(samples, actual_sampling_frequency, trig, al
 
         if strcmpi(align_mode, "trig") && ~isempty(trig.rising_crossings)
             period_samples = T_init;
-            % Compensa o arredondamento do índice de trigger para a amostra exibida.
+            % Compensa o deslocamento entre a posição fracionária da borda e trig_idx.
             ph_opt = mod(ph_trig + (trig.trig_idx - trig.rising_crossings(1)) / T_init, 1.0);
         else
-            % Busca em grade para a fase inicial
+            % Otimiza período e fase sobre o buffer completo (preserva picos/vales)
+            % e projeta a fase resultante para o início da janela pós-trigger.
+            n_full = (0:(sample_amount - 1))';
             ph_grid = linspace(0, 1, 241);
             ph_grid(end) = [];
             best_mse = inf;
-            best_ph = ph_trig;
+            best_ph_full = ph_trig;
             for ph_cand = ph_grid
-                y_cand = wave_fn(x_plot, T_init, ph_cand);
-                mse_cand = mean((y_plot - y_cand) .^ 2);
+                y_cand = wave_fn(n_full, T_init, ph_cand);
+                mse_cand = mean((samples - y_cand) .^ 2);
                 if mse_cand < best_mse
                     best_mse = mse_cand;
-                    best_ph = ph_cand;
+                    best_ph_full = ph_cand;
                 end
             end
 
@@ -112,13 +114,13 @@ function per = estimateSignalPeriod(samples, actual_sampling_frequency, trig, al
                 t_scales = linspace(-0.03, 0.03, 25);
                 ph_deltas = linspace(-0.015, 0.015, 31);
                 best_T = T_init;
-                best_ph_loc = best_ph;
+                best_ph_loc = best_ph_full;
                 best_mse_loc = best_mse;
                 for du = t_scales
                     T_cand = T_init * exp(du);
                     for dp = ph_deltas
-                        ph_c = mod(best_ph + dp, 1.0);
-                        mse_c = mean((y_plot - wave_fn(x_plot, T_cand, ph_c)) .^ 2);
+                        ph_c = mod(best_ph_full + dp, 1.0);
+                        mse_c = mean((samples - wave_fn(n_full, T_cand, ph_c)) .^ 2);
                         if mse_c < best_mse_loc
                             best_mse_loc = mse_c;
                             best_T = T_cand;
@@ -127,19 +129,20 @@ function per = estimateSignalPeriod(samples, actual_sampling_frequency, trig, al
                     end
                 end
                 period_samples = best_T;
-                ph_opt = best_ph_loc;
+                ph_full_opt = best_ph_loc;
             else
-                cost_fn = @(u) mean((y_plot - wave_fn(x_plot, T_init * exp(u(1)), best_ph + u(2))) .^ 2);
+                cost_fn = @(u) mean((samples - wave_fn(n_full, T_init * exp(u(1)), best_ph_full + u(2))) .^ 2);
                 opts = optimset("TolX", 1e-6, "TolFun", 1e-6, "MaxIter", 400, "Display", "off");
                 u_opt = fminsearch(cost_fn, [0, 0], opts);
                 if abs(u_opt(1)) < 0.08
                     period_samples = T_init * exp(u_opt(1));
-                    ph_opt = mod(best_ph + u_opt(2), 1.0);
+                    ph_full_opt = mod(best_ph_full + u_opt(2), 1.0);
                 else
                     period_samples = T_init;
-                    ph_opt = best_ph;
+                    ph_full_opt = best_ph_full;
                 end
             end
+            ph_opt = mod(ph_full_opt + (trig.trig_idx - 1) / period_samples, 1.0);
         end
     end
 
@@ -151,7 +154,6 @@ function per = estimateSignalPeriod(samples, actual_sampling_frequency, trig, al
     per.period_samples = period_samples;
     per.period_sec = period_sec;
     per.freq_hz = freq_hz;
-    per.signal_frequency = freq_hz;
     per.ph_opt = ph_opt;
     per.x_plot = x_plot;
     per.y_plot = y_plot;

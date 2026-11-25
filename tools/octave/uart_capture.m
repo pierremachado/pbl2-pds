@@ -13,14 +13,18 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
     %   -> Reutiliza a porta serial aberta 's' para captura rápida em tempo real.
     % =========================================================================
 
-    pkg load instrument-control;
+    if exist("serial") == 0
+        pkg load instrument-control;
+    end
 
     % --- DIRETÓRIOS E PATHS DE MÓDULOS ---
     base_dir = fileparts(mfilename("fullpath"));
     if isempty(base_dir)
         base_dir = pwd();
     end
-    addpath(genpath(fullfile(base_dir, "src")));
+    if exist("detectSignalTrigger", "file") == 0
+        addpath(genpath(fullfile(base_dir, "src")));
+    end
     output_dir = fullfile(base_dir, "data");
 
     % --- PARÂMETROS DEFAULT ---
@@ -95,15 +99,21 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
     status    = -1;
     file_path = "";
 
+    % Timeout dinâmico em décimos de segundo compatível com fs baixas (ex.: 513 Hz)
+    req_timeout_ds = max(50, ceil((sample_amount / actual_sampling_frequency + 2.0) * 10));
+
     % Verifica se recebeu o nome da porta (string) ou um objeto serial já aberto
     own_serial = ischar(serial_target);
     if own_serial
         disp("Conectando à porta serial...");
         s = serial(serial_target, default_baud_rate);
-        set(s, "timeout", 50);
+        set(s, "timeout", req_timeout_ds);
         pause(2);
     else
         s = serial_target;
+        if get(s, "timeout") < req_timeout_ds
+            set(s, "timeout", req_timeout_ds);
+        end
     end
 
     unwind_protect
@@ -144,12 +154,15 @@ function [samples, actual_sampling_frequency, status, file_path] = uart_capture(
 
         samples = double(raw_samples(:));
 
-        % --- CÁLCULO ESSENCIAL DO PERÍODO E FREQUÊNCIA DO SINAL ---
-        trig = detectSignalTrigger(samples);
-        per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, "trig", wave_type);
-        period_samples   = per.period_samples;
-        period_sec       = per.period_sec;
-        signal_frequency = per.signal_frequency;
+        % --- CÁLCULO DO PERÍODO E FREQUÊNCIA SOMENTE QUANDO NECESSÁRIO ---
+        need_period_info = own_serial || auto_save || show_plot;
+        if need_period_info
+            trig = detectSignalTrigger(samples);
+            per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, "trig", wave_type);
+            period_samples   = per.period_samples;
+            period_sec       = per.period_sec;
+            signal_frequency = per.freq_hz;
+        end
 
         if own_serial
             printf("Leitura concluída! Onda = %s | f = %.2f Hz | T = %.2f ms (%.1f am/ciclo)\n", ...

@@ -1,15 +1,13 @@
-function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV, ...
-                                 ax_wave, h_ideal_cont, h_ideal_quant, h_wave, h_trig, ...
-                                 ax_fft, h_fft_ref, h_fft_quant, h_fft_adc, h_fft_peak, ...
-                                 ax_trans, h_trans_ideal, h_trans_fit, h_trans_real, ...
-                                 ax_err, h_err_raw, h_err_intr, h_err_lim_p, h_err_lim_n, ...
-                                 ax_dnl, h_dnl, ax_inl, h_inl, h_nonmono, ...
-                                 txt_col1, txt_col2, txt_col3)
+function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV, plots, txt_cols, fft_scale_mode)
     % =========================================================================
-    % UPDATEANALYZERDASHBOARD - Atualiza os 6 gráficos e as 3 colunas de telemetria
+    % UPDATEANALYZERDASHBOARD - Atualiza os 6 gráficos (GUI/PNG) e telemetria da GUI
     % =========================================================================
 
-    % 1. Seleção de escala (LSB vs Volts vs %FSR)
+    if nargin < 9 || isempty(fft_scale_mode)
+        fft_scale_mode = 1; % 1: dBFS (log), 2: Linear (0-100% FS)
+    end
+
+    % 1. Seleção de escala (LSB vs Volts vs %FSR = 100 / 256 por LSB)
     if unit_mode == 2
         scale_sig = VREF / 256.0;
         sig_unit_lbl = "Tensão (V)";
@@ -18,12 +16,12 @@ function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV,
         err_unit_lbl = "Erro (mV)";
         err_lim_val = 0.5 * LSB_MV; % +-5 mV
     elseif unit_mode == 3
-        scale_sig = 100.0 / 255.0;
+        scale_sig = 100.0 / 256.0;
         sig_unit_lbl = "Escala (%FSR)";
         sig_ylim = [-4, 105];
-        err_scale = 100.0 / 255.0;
+        err_scale = 100.0 / 256.0;
         err_unit_lbl = "Erro Relativo (%FSR)";
-        err_lim_val = (0.5 / 255.0) * 100.0; % +-0.196%
+        err_lim_val = (0.5 / 256.0) * 100.0; % +-0.1953%
     else
         scale_sig = 1.0;
         sig_unit_lbl = "Código ADC (0 a 255)";
@@ -33,95 +31,119 @@ function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV,
         err_lim_val = 0.5;
     end
 
-    set(h_ideal_cont,  "xdata", m.x_plot, "ydata", m.ideal_cont_plot * scale_sig);
-    set(h_ideal_quant, "xdata", m.x_plot, "ydata", m.ideal_quant_plot * scale_sig);
-    set(h_wave,        "xdata", m.x_plot, "ydata", m.y_plot * scale_sig);
-    set(h_trig,        "xdata", [0, max(1, numel(m.x_plot) - 1)], ...
-                       "ydata", [m.trig_level, m.trig_level] * scale_sig);
+    x_end = max(1, numel(m.x_plot) - 1);
+    set(plots.h_ideal_cont,  "xdata", m.x_plot, "ydata", m.ideal_cont_plot * scale_sig);
+    set(plots.h_ideal_quant, "xdata", m.x_plot, "ydata", m.ideal_quant_plot * scale_sig);
+    set(plots.h_wave,        "xdata", m.x_plot, "ydata", m.y_plot * scale_sig);
+    set(plots.h_trig,        "xdata", [0, x_end], "ydata", [m.trig_level, m.trig_level] * scale_sig);
     % Limites vazios preservam o pan/zoom nativo ao trocar a unidade.
     if ~isempty(pan_start)
-        xlim(ax_wave, [pan_start, pan_start + win_len]);
+        xlim(plots.ax_wave, [pan_start, pan_start + win_len]);
     end
-    ylim(ax_wave, sig_ylim);
-    ylabel(ax_wave, sig_unit_lbl);
-    title(ax_wave, sprintf("1. Sinal 8b vs. %s Ideal [%s | f=%.2f Hz | fs=%.1f Hz]", ...
-                           m.wave_label, m.file_name, m.freq_hz, m.actual_sampling_frequency), "interpreter", "none");
-    legend(ax_wave, {[m.wave_label, " Contínuo"], "Ideal Quantizado (256 nív.)", "Capturado (ADC 8b)", "Trigger"}, ...
+    ylim(plots.ax_wave, sig_ylim);
+    ylabel(plots.ax_wave, sig_unit_lbl);
+    title(plots.ax_wave, sprintf("1. Sinal 8b vs. %s Ideal [%s | f=%.2f Hz | fs=%.1f Hz]", ...
+                                 m.wave_label, m.file_name, m.freq_hz, m.actual_sampling_frequency), "interpreter", "none");
+    legend(plots.ax_wave, {[m.wave_label, " Contínuo"], "Ideal Quantizado (256 nív.)", "Capturado (ADC 8b)", "Trigger"}, ...
            "location", "northeast", "fontsize", 8);
 
     % 2. FFT Tripla (ADC vs Quantizado Ideal vs Referência Contínua)
     f_max_view = min(m.actual_sampling_frequency / 2.0, max(150.0, 18.0 * m.freq_hz));
-    set(h_fft_ref,   "xdata", m.freq_axis, "ydata", m.mag_dbfs_ref);
-    set(h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_dbfs_quant);
-    set(h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_dbfs);
-    set(h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_dbfs);
-    if ~isempty(pan_start)
-        xlim(ax_fft, [0, f_max_view]);
+    if fft_scale_mode == 2
+        set(plots.h_fft_ref,   "xdata", m.freq_axis, "ydata", m.mag_pct_ref);
+        set(plots.h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_pct_quant);
+        set(plots.h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_pct);
+        set(plots.h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_pct);
+        max_pct = max([100.0; m.mag_pct(:); m.mag_pct_ref(:)]);
+        ylim(plots.ax_fft, [0, max(105.0, 1.05 * max_pct)]);
+        ylabel(plots.ax_fft, "Magnitude (% FS)");
+    else
+        set(plots.h_fft_ref,   "xdata", m.freq_axis, "ydata", m.mag_dbfs_ref);
+        set(plots.h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_dbfs_quant);
+        set(plots.h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_dbfs);
+        set(plots.h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_dbfs);
+        ylim(plots.ax_fft, [-105, 5]);
+        ylabel(plots.ax_fft, "Magnitude (dBFS)");
     end
-    title(ax_fft, sprintf("2. FFT: ADC vs. Quantizado vs. %s", m.wave_label));
-    legend(ax_fft, {["FFT ", m.wave_label, " Puro"], "FFT Quantizado 256n", "FFT ADC Capturado", "Fundamental"}, ...
+    if ~isempty(pan_start)
+        xlim(plots.ax_fft, [0, f_max_view]);
+    end
+    title(plots.ax_fft, sprintf("2. FFT: ADC vs. Quantizado vs. %s", m.wave_label));
+    legend(plots.ax_fft, {["FFT ", m.wave_label, " Puro"], "FFT Quantizado 256n", "FFT ADC Capturado", "Fundamental"}, ...
            "location", "northeast", "fontsize", 7.5);
 
     % 3. Curva de Transferência Real vs Ideal
     x_codes = (0:255)';
     y_fit_line = m.measured_gain * x_codes + m.intercept_lsb;
-    set(h_trans_ideal, "xdata", x_codes, "ydata", x_codes);
-    set(h_trans_fit,   "xdata", x_codes, "ydata", y_fit_line);
-    set(h_trans_real,  "xdata", x_codes, "ydata", m.mean_adc_per_level);
+    set(plots.h_trans_ideal, "xdata", x_codes, "ydata", x_codes);
+    set(plots.h_trans_fit,   "xdata", x_codes, "ydata", y_fit_line);
+    set(plots.h_trans_real,  "xdata", x_codes, "ydata", m.mean_adc_per_level);
     if m.linearity_valid
-        title(ax_trans, "3. Curva de Transferência (Offset e Ganho)");
+        title(plots.ax_trans, sprintf("3. Transferência (G=%.4f | Off=%+.2f LSB)", m.measured_gain, m.offset_error_lsb));
     else
-        title(ax_trans, "3. Transferência (Apenas Platôs - Quadrada)");
+        title(plots.ax_trans, "3. Transferência (Apenas Platôs - Quadrada)");
     end
 
     % 4. Gráfico de Erros no Tempo (Bruto e Intrínseco)
-    set(h_err_raw,   "xdata", m.x_plot, "ydata", m.err_vs_cont_lsb * err_scale);
-    set(h_err_intr,  "xdata", m.x_plot, "ydata", m.err_intrinsic_lsb * err_scale);
-    set(h_err_lim_p, "xdata", [0, max(1, numel(m.x_plot) - 1)], "ydata", [err_lim_val, err_lim_val]);
-    set(h_err_lim_n, "xdata", [0, max(1, numel(m.x_plot) - 1)], "ydata", [-err_lim_val, -err_lim_val]);
+    set(plots.h_err_raw,   "xdata", m.x_plot, "ydata", m.err_vs_cont_lsb * err_scale);
+    set(plots.h_err_intr,  "xdata", m.x_plot, "ydata", m.err_intrinsic_lsb * err_scale);
+    set(plots.h_err_lim_p, "xdata", [0, x_end], "ydata", [err_lim_val, err_lim_val]);
+    set(plots.h_err_lim_n, "xdata", [0, x_end], "ydata", [-err_lim_val, -err_lim_val]);
     if ~isempty(pan_start)
-        xlim(ax_err, [pan_start, pan_start + win_len]);
+        xlim(plots.ax_err, [pan_start, pan_start + win_len]);
     end
     max_e_plot = max(1.5 * err_lim_val, min(25 * err_scale, 1.15 * max(abs(m.err_vs_cont_lsb)) * err_scale));
-    ylim(ax_err, [-max_e_plot, max_e_plot]);
-    ylabel(ax_err, err_unit_lbl);
+    ylim(plots.ax_err, [-max_e_plot, max_e_plot]);
+    ylabel(plots.ax_err, err_unit_lbl);
+    title(plots.ax_err, sprintf("4. Erro Instantâneo (RMSE Bruto=%.2f LSB [%.2f%%FSR] | Intrínseco=%.2f LSB | MAE=%.2f LSB)", ...
+                                m.rmse_lsb, m.rmse_pct_fsr, m.rmse_intrinsic_lsb, m.mae_lsb));
 
     % 5 e 6. DNL e INL
     if m.linearity_valid
-        set(h_dnl, "ydata", m.dnl);
-        ylim(ax_dnl, [min(-1.2, m.dnl_min - 0.25), max(1.2, m.dnl_max + 0.25)]);
+        set(plots.h_dnl, "ydata", m.dnl);
+        ylim(plots.ax_dnl, [min(-1.2, m.dnl_min - 0.25), max(1.2, m.dnl_max + 0.25)]);
         hist_tag = ifelse(strcmp(m.hist_mode, "sine"), "IEEE 1241", "Uniforme");
-        title(ax_dnl, sprintf("5. DNL [%s | %d ciclo(s) | RMS=%.2f LSB]", ...
-                              hist_tag, max(1, m.num_full_cycles), m.dnl_rms));
-
-        set(h_inl, "ydata", m.inl);
-        if ~isempty(m.nonmono_codes)
-            set(h_nonmono, "xdata", m.nonmono_codes, "ydata", m.inl(m.nonmono_codes + 1));
+        if m.num_full_cycles >= 1
+            dnl_scope_str = sprintf("%d ciclo(s)", m.num_full_cycles);
         else
-            set(h_nonmono, "xdata", NaN, "ydata", NaN);
+            dnl_scope_str = "rampa parcial";
         end
-        ylim(ax_inl, [min(-1.5, m.inl_min - 0.4), max(1.5, m.inl_max + 0.4)]);
-        title(ax_inl, "6. Erro de INL (LSB) e Monotonicidade");
-    else
-        set(h_dnl, "ydata", nan(256, 1));
-        ylim(ax_dnl, [-1.5, 1.5]);
-        title(ax_dnl, "5. DNL (N/A para Onda Quadrada)");
+        title(plots.ax_dnl, sprintf("5. DNL [%s | %s | RMS=%.2f LSB]", hist_tag, dnl_scope_str, m.dnl_rms));
 
-        set(h_inl, "ydata", nan(256, 1));
-        set(h_nonmono, "xdata", NaN, "ydata", NaN);
-        ylim(ax_inl, [-2.5, 2.5]);
-        title(ax_inl, "6. INL (N/A para Onda Quadrada)");
+        set(plots.h_inl, "ydata", m.inl);
+        if ~isempty(m.nonmono_codes)
+            set(plots.h_nonmono, "xdata", m.nonmono_codes, "ydata", m.inl(m.nonmono_codes + 1));
+        else
+            set(plots.h_nonmono, "xdata", NaN, "ydata", NaN);
+        end
+        ylim(plots.ax_inl, [min(-1.5, m.inl_min - 0.4), max(1.5, m.inl_max + 0.4)]);
+        title(plots.ax_inl, sprintf("6. INL (Min=%+.2f | Max=%+.2f LSB | Miss=%d)", m.inl_min, m.inl_max, m.missing_codes));
+    else
+        set(plots.h_dnl, "ydata", nan(256, 1));
+        ylim(plots.ax_dnl, [-1.5, 1.5]);
+        title(plots.ax_dnl, "5. DNL (N/A para Onda Quadrada)");
+
+        set(plots.h_inl, "ydata", nan(256, 1));
+        set(plots.h_nonmono, "xdata", NaN, "ydata", NaN);
+        ylim(plots.ax_inl, [-2.5, 2.5]);
+        title(plots.ax_inl, "6. INL (N/A para Onda Quadrada)");
     end
 
-    % 7. Textos de Telemetria (3 Colunas)
+    % 7. Textos de Telemetria (3 Colunas, apenas na GUI)
+    if nargin < 8 || isempty(txt_cols)
+        return;
+    end
+
     if ~m.linearity_valid
         mono_str = "N/A (Quadrada)";
         dnl_line = "DNL (Min/Max) : N/A (Onda Quadrada)";
         inl_line = sprintf("INL (Min/Max) : N/A | %s", mono_str);
         miss_line = "MISSING CODES : N/A (apenas 2 níveis)";
     else
-        if m.is_monotonic
+        if m.is_monotonic && m.missing_codes == 0
             mono_str = "SIM (Monotônico)";
+        elseif m.is_monotonic
+            mono_str = sprintf("SIM (%d miss)", m.missing_codes);
         else
             mono_str = sprintf("NÃO (%d inv | %d miss)", numel(m.nonmono_codes), m.missing_codes);
         end
@@ -196,7 +218,7 @@ function updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF, LSB_MV,
             miss_line);
     end
 
-    set(txt_col1, "string", col1_str);
-    set(txt_col2, "string", col2_str);
-    set(txt_col3, "string", col3_str);
+    set(txt_cols.col1, "string", col1_str);
+    set(txt_cols.col2, "string", col2_str);
+    set(txt_cols.col3, "string", col3_str);
 end

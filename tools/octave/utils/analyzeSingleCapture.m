@@ -3,7 +3,7 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     % ANALYZESINGLECAPTURE - Condiciona os dados e calcula todas as métricas de um .mat
     %
     % Orquestra os módulos de src/ (triggering, conditioning, spectral, linearity)
-    % e empacota todos os resultados na estrutura padronizada 'm'.
+    % e empacota os resultados na estrutura padronizada 'm'.
     % Se wave_type não for fornecido, usa o campo 'wave_type' salvo no .mat
     % (quando existir) ou "triangular" como padrão.
     % =========================================================================
@@ -66,14 +66,17 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
         adc_prescaler = 16;
     end
 
+    % Limites dinâmicos coerentes com o datasheet (13 ciclos ADC) e com o firmware (Timer1 CTC)
     adc_clock_hz = 16000000 / adc_prescaler;
     conversion_time_us = (13.0 / adc_clock_hz) * 1e6;
-    max_theoretical_fs = 16000000 / (14.0 * adc_prescaler + 256.0);
+    max_adc_fs_hz = adc_clock_hz / 13.0;
+    min_timer_ticks = floor((14 * adc_prescaler + 256) / 8) + 1;
+    max_firmware_fs_hz = 16000000 / (8 * min_timer_ticks);
 
     % 2. Execução encadeada dos módulos de processamento em src/
     trig = detectSignalTrigger(samples);
     per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode, wspec.type);
-    ref  = generateIdealReference(samples, trig, per, VREF, wspec.type);
+    ref  = generateIdealReference(samples, trig, per, wspec.type);
     err  = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wspec.type);
     spec = computeSpectralMetrics(samples, actual_sampling_frequency, per, ref, err, LSB_MV, wspec.type);
     lin  = computeHistogramLinearity(samples, trig, per, ref, wspec.type);
@@ -82,26 +85,23 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     m.samples            = samples;
     m.x_plot             = per.x_plot;
     m.y_plot             = per.y_plot;
-    m.ideal_plot         = ref.ideal_plot;
     m.ideal_cont_plot    = ref.ideal_cont_plot;
     m.ideal_quant_plot   = ref.ideal_quant_plot;
     m.ideal_bestfit_plot = err.ideal_bestfit_plot;
-    m.y_volts            = ref.y_volts;
-    m.ideal_cont_volts   = ref.ideal_cont_volts;
-    m.ideal_quant_volts  = ref.ideal_quant_volts;
 
-    m.signal_frequency          = per.signal_frequency;
     m.sampling_frequency        = sampling_frequency;
     m.actual_sampling_frequency = actual_sampling_frequency;
     m.adc_prescaler             = adc_prescaler;
     m.sample_amount             = sample_amount;
     m.adc_clock_hz              = adc_clock_hz;
     m.conversion_time_us        = conversion_time_us;
-    m.max_theoretical_fs        = max_theoretical_fs;
+    m.max_adc_fs_hz             = max_adc_fs_hz;
+    m.max_firmware_fs_hz        = max_firmware_fs_hz;
 
     m.freq_hz         = per.freq_hz;
     m.fund_freq_fft   = spec.fund_freq_fft;
     m.fund_mag_dbfs   = spec.fund_mag_dbfs;
+    m.fund_mag_pct    = spec.fund_mag_pct;
     m.period_sec      = per.period_sec;
     m.period_samples  = per.period_samples;
     m.num_full_cycles = lin.num_full_cycles;
@@ -123,17 +123,12 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     m.measured_gain    = err.measured_gain;
     m.intercept_lsb    = err.intercept_lsb;
 
-    m.err_vs_cont_lsb     = err.err_vs_cont_lsb;
-    m.err_vs_quant_lsb    = err.err_vs_quant_lsb;
-    m.err_intrinsic_lsb   = err.err_intrinsic_lsb;
-    m.abs_err_cont_lsb    = err.abs_err_cont_lsb;
-    m.rel_err_fsr_pct     = err.rel_err_fsr_pct;
-    m.rel_err_instant_pct = err.rel_err_instant_pct;
+    m.err_vs_cont_lsb   = err.err_vs_cont_lsb;
+    m.err_intrinsic_lsb = err.err_intrinsic_lsb;
 
     m.rmse_lsb            = err.rmse_lsb;
     m.rmse_mv             = err.rmse_mv;
     m.rmse_pct_fsr        = err.rmse_pct_fsr;
-    m.rmse_vs_quant_lsb   = err.rmse_vs_quant_lsb;
     m.rmse_intrinsic_lsb  = err.rmse_intrinsic_lsb;
     m.rmse_intrinsic_mv   = err.rmse_intrinsic_mv;
     m.rmse_intrinsic_pct  = err.rmse_intrinsic_pct;
@@ -144,40 +139,30 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     m.max_abs_err_mv      = err.max_abs_err_mv;
     m.max_abs_err_pct_fsr = err.max_abs_err_pct_fsr;
     m.mape_signal_pct     = err.mape_signal_pct;
-    m.median_rel_err_pct  = err.median_rel_err_pct;
 
-    m.freq_axis       = spec.freq_axis;
-    m.mag_dbfs        = spec.mag_dbfs;
-    m.mag_dbfs_quant  = spec.mag_dbfs_quant;
-    m.mag_dbfs_ref    = spec.mag_dbfs_ref;
-    m.mag_dbfs_tri    = spec.mag_dbfs_tri;
-    m.phase_deg       = spec.phase_deg;
-    m.phase_deg_quant = spec.phase_deg_quant;
-    m.phase_deg_ref   = spec.phase_deg_ref;
-    m.phase_deg_tri   = spec.phase_deg_tri;
-    m.sig_bins        = spec.sig_bins;
+    m.freq_axis      = spec.freq_axis;
+    m.mag_dbfs       = spec.mag_dbfs;
+    m.mag_dbfs_quant = spec.mag_dbfs_quant;
+    m.mag_dbfs_ref   = spec.mag_dbfs_ref;
+    m.mag_dbfs_tri   = spec.mag_dbfs_tri;
+    m.mag_pct        = spec.mag_pct;
+    m.mag_pct_quant  = spec.mag_pct_quant;
+    m.mag_pct_ref    = spec.mag_pct_ref;
+    m.phase_deg      = spec.phase_deg;
 
     m.dr_db                 = spec.dr_db;
     m.dr_wave_db            = spec.dr_wave_db;
-    m.dr_tri_db             = spec.dr_tri_db;
     m.dr_quant_db           = spec.dr_quant_db;
-    m.dr_db_legacy          = spec.dr_db_legacy;
     m.sfdr_dbc              = spec.sfdr_dbc;
     m.sfdr_wave_dbc         = spec.sfdr_wave_dbc;
-    m.sfdr_tri_dbc          = spec.sfdr_tri_dbc;
     m.sinad_db              = spec.sinad_db;
     m.thd_db                = spec.thd_db;
     m.enob_bits             = spec.enob_bits;
     m.sinad_wave_total_db   = spec.sinad_wave_total_db;
     m.sinad_wave_intrin_db  = spec.sinad_wave_intrin_db;
-    m.sinad_tri_total_db    = spec.sinad_tri_total_db;
-    m.sinad_tri_intrin_db   = spec.sinad_tri_intrin_db;
     m.sqnr_ideal_quant_db   = spec.sqnr_ideal_quant_db;
     m.enob_wave_total_bits  = spec.enob_wave_total_bits;
     m.enob_wave_intrin_bits = spec.enob_wave_intrin_bits;
-    m.enob_tri_total_bits   = spec.enob_tri_total_bits;
-    m.enob_tri_intrin_bits  = spec.enob_tri_intrin_bits;
-    m.enob_ideal_quant      = spec.enob_ideal_quant;
     m.noise_floor_rms_lsb   = spec.noise_floor_rms_lsb;
     m.noise_floor_rms_mv    = spec.noise_floor_rms_mv;
 

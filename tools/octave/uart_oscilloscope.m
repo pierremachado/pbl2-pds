@@ -35,7 +35,8 @@ wave_labels = {"Desligado", "Triangular", "Senoidal", "Dente de Serra", "Quadrad
 % --- ABERTURA DA PORTA SERIAL ---
 disp("Conectando à porta serial...");
 s = serial(serial_port, baud_rate);
-set(s, "timeout", 50);
+req_timeout_ds = max(50, ceil((sample_amount / sampling_frequency + 2.0) * 10));
+set(s, "timeout", req_timeout_ds);
 pause(2);
 
 % --- CRIAÇÃO DA JANELA DO OSCILOSCÓPIO (2 GRÁFICOS + TELEMETRIA DE BANCADA) ---
@@ -127,8 +128,17 @@ sel_reference = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
                          "string", {"Trigger auto (rápido)", "Ajustada (adc_analyzer)"}, ...
                          "value", 1, "enable", "off");
 
+uicontrol(fig, "style", "text", "units", "normalized", ...
+          "position", [0.63, 0.30, 0.08, 0.035], ...
+          "backgroundcolor", [0.95, 0.96, 0.98], "string", "Escala FFT:");
+sel_fft_scale = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
+                          "position", [0.72, 0.30, 0.25, 0.04], ...
+                          "string", {"dBFS (log)", "Linear (0-100%)"}, ...
+                          "value", 1);
+
 prev_reference     = -1;
 prev_wave_idx      = -1;
+prev_fft_scale     = -1;
 prev_ideal_enabled = false;
 has_valid_frame    = false;
 prev_win_len       = -1;
@@ -177,8 +187,10 @@ unwind_protect
         end
 
         reference_mode = get(sel_reference, "value");
+        fft_scale_mode = get(sel_fft_scale, "value");
         analysis_changed = new_frame_read || (wave_idx ~= prev_wave_idx) || ...
                            (ideal_enabled && (reference_mode ~= prev_reference));
+        fft_scale_changed = (fft_scale_mode ~= prev_fft_scale);
         if analysis_changed
             align_mode = "trig";
             if ideal_enabled && reference_mode == 2
@@ -187,7 +199,7 @@ unwind_protect
             trig = detectSignalTrigger(samples);
             per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode, curr_wave_type);
             if ideal_enabled
-                ref = generateIdealReference(samples, trig, per, VREF, curr_wave_type);
+                ref = generateIdealReference(samples, trig, per, curr_wave_type);
                 err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, curr_wave_type);
             else
                 ref = [];
@@ -213,16 +225,38 @@ unwind_protect
 
         sliders_changed = (win_len ~= prev_win_len) || (pan_start ~= prev_pan_start);
 
-        if analysis_changed || sliders_changed
-            if ideal_enabled
-                set(h_ideal, "xdata", per.x_plot, "ydata", ref.ideal_cont_plot, "visible", "on");
-            else
-                set(h_ideal, "visible", "off");
+        if analysis_changed || sliders_changed || fft_scale_changed
+            if analysis_changed
+                if ideal_enabled
+                    set(h_ideal, "xdata", per.x_plot, "ydata", ref.ideal_cont_plot, "visible", "on");
+                else
+                    set(h_ideal, "visible", "off");
+                end
+                set(h_wave,  "xdata", per.x_plot, "ydata", per.y_plot);
+                set(h_trig,  "xdata", [0, max(1, valid_len - 1)], "ydata", [trig.trig_level, trig.trig_level]);
+                ylim(ax_wave, [-10, 265]);
             end
-            set(h_wave,  "xdata", per.x_plot, "ydata", per.y_plot);
-            set(h_trig,  "xdata", [0, max(1, valid_len - 1)], "ydata", [trig.trig_level, trig.trig_level]);
-            xlim(ax_wave, [pan_start, pan_start + win_len]);
-            ylim(ax_wave, [-10, 265]);
+
+            if analysis_changed || fft_scale_changed
+                f_max_view = min(actual_sampling_frequency / 2.0, max(200.0, 18.0 * per.freq_hz));
+                if fft_scale_mode == 2
+                    set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_pct);
+                    set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_pct);
+                    max_pct = 100.0;
+                    if isfinite(spec.peak_pct)
+                        max_pct = max(100.0, spec.peak_pct);
+                    end
+                    ylim(ax_fft, [0, max(105.0, 1.05 * max_pct)]);
+                    ylabel(ax_fft, "Magnitude (% FS)");
+                else
+                    set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_dbfs);
+                    set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_dbfs);
+                    ylim(ax_fft, [-100, 5]);
+                    ylabel(ax_fft, "Magnitude (dBFS)");
+                end
+                xlim(ax_fft, [0, f_max_view]);
+                prev_fft_scale = fft_scale_mode;
+            end
 
             if analysis_changed
                 if ideal_enabled ~= prev_ideal_enabled
@@ -240,11 +274,6 @@ unwind_protect
 
                 curr_wave_label = ifelse(ideal_enabled, ref.wave_label, "Desligado");
                 title(ax_wave, sprintf("Forma de Onda no Tempo (Referência: %s)", curr_wave_label));
-                f_max_view = min(actual_sampling_frequency / 2.0, max(200.0, 18.0 * per.freq_hz));
-                set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_dbfs);
-                set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_dbfs);
-                xlim(ax_fft, [0, f_max_view]);
-                ylim(ax_fft, [-100, 5]);
 
                 peak_text = "sem componente AC";
                 if isfinite(spec.peak_frequency)
@@ -282,6 +311,7 @@ unwind_protect
                     offset_line, gain_rmse_line));
             end
 
+            xlim(ax_wave, [pan_start, pan_start + win_len]);
             prev_win_len   = win_len;
             prev_pan_start = pan_start;
         end

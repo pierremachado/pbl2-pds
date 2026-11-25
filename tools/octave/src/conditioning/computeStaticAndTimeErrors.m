@@ -4,10 +4,10 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     %
     % Calcula:
     %   - Ganho medido, intercepto, erro de offset e erro de ganho (LSB, mV, %FSR)
-    %   - Vetores de erro ponto-a-ponto (bruto, quantizado, intrínseco sem
-    %     ganho/offset e erro teórico puro de quantização de 8 bits)
+    %   - Vetores de erro ponto-a-ponto (bruto, intrínseco sem ganho/offset e
+    %     erro teórico puro de quantização de 8 bits)
     %   - Métricas escalares: RMSE bruto, RMSE intrínseco, MAE, Erro Máximo,
-    %     Erro Relativo ao fundo de escala (%FSR) e MAPE (% do sinal).
+    %     Erro Relativo ao fundo de escala (%FSR = 256 LSB) e MAPE (% do sinal).
     %
     % Adaptado por forma de onda:
     %   - Para quadrada: estima ganho/offset pelas medianas dos platôs alto/baixo.
@@ -58,7 +58,7 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
         else
             measured_gain    = trig.s_vpp / 255.0;
             intercept_lsb    = mean(y_plot) - measured_gain * 127.5;
-            offset_error_lsb = mean(samples) - 127.5;
+            offset_error_lsb = mean(y_plot) - 127.5;
             gain_error_lsb   = trig.s_vpp - 255.0;
         end
     else
@@ -76,13 +76,13 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
         else
             measured_gain    = trig.s_vpp / 255.0;
             intercept_lsb    = mean(y_plot) - measured_gain * 127.5;
-            offset_error_lsb = mean(samples) - 127.5;
+            offset_error_lsb = mean(y_plot) - 127.5;
             gain_error_lsb   = trig.s_vpp - 255.0;
         end
     end
 
-    offset_error_pct = (offset_error_lsb / 255.0) * 100.0;
-    gain_error_pct   = (gain_error_lsb / 255.0) * 100.0;
+    offset_error_pct = (offset_error_lsb / 256.0) * 100.0;
+    gain_error_pct   = (gain_error_lsb / 256.0) * 100.0;
     offset_error_mv  = offset_error_lsb * LSB_MV;
     gain_error_mv    = gain_error_lsb * LSB_MV;
 
@@ -90,48 +90,39 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     err_vs_cont_lsb  = y_plot - ideal_cont_plot;
     abs_err_cont_lsb = abs(err_vs_cont_lsb);
 
-    err_vs_quant_lsb  = y_plot - ideal_quant_plot;
-
     ideal_bestfit_plot = min(255, max(0, measured_gain * ideal_cont_plot + intercept_lsb));
     err_intrinsic_lsb  = y_plot - ideal_bestfit_plot;
 
     err_ideal_quant_lsb = ideal_quant_plot - ideal_cont_plot;
 
-    % Métricas escalares de Erro Absoluto, RMSE e Erro Relativo
+    % Métricas escalares de Erro Absoluto, RMSE e Erro Relativo (%FSR = 1 LSB / 256)
     rmse_lsb           = sqrt(mean(err_vs_cont_lsb .^ 2));
     rmse_mv            = rmse_lsb * LSB_MV;
-    rmse_pct_fsr       = (rmse_lsb / 255.0) * 100.0;
+    rmse_pct_fsr       = (rmse_lsb / 256.0) * 100.0;
 
-    rmse_vs_quant_lsb  = sqrt(mean(err_vs_quant_lsb .^ 2));
     if sum(steady_mask) >= 20
         rmse_intrinsic_lsb = sqrt(mean(err_intrinsic_lsb(steady_mask) .^ 2));
     else
         rmse_intrinsic_lsb = sqrt(mean(err_intrinsic_lsb .^ 2));
     end
     rmse_intrinsic_mv  = rmse_intrinsic_lsb * LSB_MV;
-    rmse_intrinsic_pct = (rmse_intrinsic_lsb / 255.0) * 100.0;
+    rmse_intrinsic_pct = (rmse_intrinsic_lsb / 256.0) * 100.0;
 
     mae_lsb            = mean(abs_err_cont_lsb);
     mae_mv             = mae_lsb * LSB_MV;
-    mae_pct_fsr        = (mae_lsb / 255.0) * 100.0;
+    mae_pct_fsr        = (mae_lsb / 256.0) * 100.0;
 
     max_abs_err_lsb     = max(abs_err_cont_lsb);
     max_abs_err_mv      = max_abs_err_lsb * LSB_MV;
-    max_abs_err_pct_fsr = (max_abs_err_lsb / 255.0) * 100.0;
+    max_abs_err_pct_fsr = (max_abs_err_lsb / 256.0) * 100.0;
 
-    % Erro relativo ponto-a-ponto (% do valor instantâneo do sinal ideal, para ideal >= 5% FSR)
-    rel_valid_mask = steady_mask & (ideal_cont_plot >= 12.75);
-    rel_err_instant_pct = nan(valid_len, 1);
+    % MAPE (% do valor instantâneo do sinal ideal, para ideal >= 5% FSR)
+    rel_valid_mask = steady_mask & (ideal_cont_plot >= 12.8);
     if any(rel_valid_mask)
-        rel_err_instant_pct(rel_valid_mask) = (abs_err_cont_lsb(rel_valid_mask) ./ ideal_cont_plot(rel_valid_mask)) * 100.0;
-        mape_signal_pct    = mean(rel_err_instant_pct(rel_valid_mask));
-        median_rel_err_pct = median(rel_err_instant_pct(rel_valid_mask));
+        mape_signal_pct = mean((abs_err_cont_lsb(rel_valid_mask) ./ ideal_cont_plot(rel_valid_mask)) * 100.0);
     else
-        mape_signal_pct    = NaN;
-        median_rel_err_pct = NaN;
+        mape_signal_pct = NaN;
     end
-
-    rel_err_fsr_pct = (err_vs_cont_lsb / 255.0) * 100.0;
 
     err = struct();
     err.steady_mask         = steady_mask;
@@ -145,16 +136,11 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     err.gain_error_pct      = gain_error_pct;
     err.ideal_bestfit_plot  = ideal_bestfit_plot;
     err.err_vs_cont_lsb     = err_vs_cont_lsb;
-    err.err_vs_quant_lsb    = err_vs_quant_lsb;
     err.err_intrinsic_lsb   = err_intrinsic_lsb;
     err.err_ideal_quant_lsb = err_ideal_quant_lsb;
-    err.abs_err_cont_lsb    = abs_err_cont_lsb;
-    err.rel_err_fsr_pct     = rel_err_fsr_pct;
-    err.rel_err_instant_pct = rel_err_instant_pct;
     err.rmse_lsb            = rmse_lsb;
     err.rmse_mv             = rmse_mv;
     err.rmse_pct_fsr        = rmse_pct_fsr;
-    err.rmse_vs_quant_lsb   = rmse_vs_quant_lsb;
     err.rmse_intrinsic_lsb  = rmse_intrinsic_lsb;
     err.rmse_intrinsic_mv   = rmse_intrinsic_mv;
     err.rmse_intrinsic_pct  = rmse_intrinsic_pct;
@@ -165,5 +151,4 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     err.max_abs_err_mv      = max_abs_err_mv;
     err.max_abs_err_pct_fsr = max_abs_err_pct_fsr;
     err.mape_signal_pct     = mape_signal_pct;
-    err.median_rel_err_pct  = median_rel_err_pct;
 end

@@ -33,22 +33,26 @@ function trig = detectSignalTrigger(samples)
     end
 
     for k = 2:sample_amount
-        if state <= 0 && samples(k - 1) < trig_level && samples(k) >= trig_level
-            if any(samples(max(1, k - 60):(k - 1)) < (trig_level - hyst))
-                frac = (trig_level - samples(k - 1)) / max(1e-6, (samples(k) - samples(k - 1)));
-                rising_crossings(end + 1) = (k - 1) + frac; %#ok<AGROW>
-                state = 1;
-            end
-        elseif state >= 0 && samples(k - 1) > trig_level && samples(k) <= trig_level
-            if any(samples(max(1, k - 60):(k - 1)) > (trig_level + hyst))
-                frac = (samples(k - 1) - trig_level) / max(1e-6, (samples(k - 1) - samples(k)));
-                falling_crossings(end + 1) = (k - 1) + frac; %#ok<AGROW>
-                state = -1;
-            end
+        if state == -1 && samples(k - 1) < trig_level && samples(k) >= trig_level
+            frac = (trig_level - samples(k - 1)) / max(1e-6, (samples(k) - samples(k - 1)));
+            rising_crossings(end + 1) = (k - 1) + frac; %#ok<AGROW>
+            state = 0;
+        elseif state == 1 && samples(k - 1) > trig_level && samples(k) <= trig_level
+            frac = (samples(k - 1) - trig_level) / max(1e-6, (samples(k - 1) - samples(k)));
+            falling_crossings(end + 1) = (k - 1) + frac; %#ok<AGROW>
+            state = 0;
+        end
+
+        if samples(k) < (trig_level - hyst)
+            state = -1;
+        elseif samples(k) > (trig_level + hyst)
+            state = 1;
         end
     end
 
-    if ~isempty(rising_crossings)
+    % Evita travar trig_idx na segunda metade do buffer quando há apenas 1 borda,
+    % o que descartaria mais de 50% de capturas com <= 1 ciclo completo.
+    if ~isempty(rising_crossings) && (numel(rising_crossings) >= 2 || round(rising_crossings(1)) <= sample_amount / 2)
         trig_idx = max(1, round(rising_crossings(1)));
         trig_str = "AUTO (Travado)";
     else

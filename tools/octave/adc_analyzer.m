@@ -74,11 +74,16 @@ function results = adc_analyzer(mode_or_file, save_updated_mat, wave_type)
             target_ext = ".mat";
         end
         target_full = [target_name, target_ext];
+        found = false;
         for k = 1:numel(mat_files)
             if strcmpi(mat_files(k).name, target_full)
                 init_file_idx = k;
+                found = true;
                 break;
             end
+        end
+        if ~found
+            error("Arquivo '%s' não encontrado em: %s", target_full, data_dir);
         end
     end
 
