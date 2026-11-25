@@ -48,7 +48,7 @@ fig = figure("name", "Osciloscópio Digital UART em Tempo Real (ATmega2560)", ..
 % 1. GRÁFICO ESQUERDO: Forma de Onda + Referência Ideal + Trigger
 ax_wave = axes("parent", fig, "position", [0.05, 0.36, 0.52, 0.57]);
 hold(ax_wave, "on");
-x_init = (0:(sample_amount - 1));
+x_init = (0:(sample_amount - 1))';
 y_init = zeros(sample_amount, 1);
 h_ideal = plot(ax_wave, x_init, y_init, "--", "color", [0.15, 0.65, 0.25], "linewidth", 1.3, "visible", "off");
 h_wave  = stairs(ax_wave, x_init, y_init, "color", [0.05, 0.30, 0.85], "linewidth", 1.1);
