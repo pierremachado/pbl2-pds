@@ -87,6 +87,8 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
     curr_idx = -1;
     curr_wave_idx = -1;
     curr_window_idx = -1;
+    curr_vref = VREF;
+    curr_lsb_mv = LSB_MV;
     pending_init_wave = init_wave_type;
     m_current = struct();
 
@@ -116,6 +118,9 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
 
             selected_window = window_types{curr_window_idx};
             m_current = analyzeSingleCapture(fpath, VREF, LSB_MV, "opt", req_wave, selected_window);
+            curr_vref   = m_current.vref;
+            curr_lsb_mv = m_current.lsb_mv;
+
             idx_match = find(strcmp(wave_types, m_current.wave_type), 1);
             if isempty(idx_match)
                 idx_match = 1;
@@ -125,8 +130,9 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
                 set(pop_wave, "value", curr_wave_idx);
             end
 
+            set(pop_unit, "string", {"Código ADC (0..255)", sprintf("Tensão (0..%.3g V)", curr_vref), "Erro Relativo (%FSR)"});
             set(fig, "name", sprintf("Analisador de ADC (ATmega2560 | Vref = %.3g V | 8 bits) — %s", ...
-                                     VREF, m_current.file_name));
+                                     curr_vref, m_current.file_name));
 
             nx = numel(m_current.x_plot);
             default_win = min(max(128, round(2.5 * m_current.period_samples)), round(0.5 * nx));
@@ -146,7 +152,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
         end
 
         if unit_mode ~= prev_unit_mode || fft_scale_mode ~= prev_fft_scale
-            plots = updateAnalyzerDashboard(m_current, unit_mode, pan_start, win_len, VREF, LSB_MV, plots, fft_scale_mode);
+            plots = updateAnalyzerDashboard(m_current, unit_mode, pan_start, win_len, curr_vref, curr_lsb_mv, plots, fft_scale_mode);
             prev_unit_mode = unit_mode;
             prev_fft_scale = fft_scale_mode;
         end
@@ -154,7 +160,7 @@ function m_current = launchAnalyzerDashboard(mat_files, init_idx, data_dir, outp
         if ishandle(btn_save) && get(btn_save, "value") == 1
             set(btn_save, "value", 0);
             saveEnrichedMat(m_current.file_path, m_current);
-            out_png = exportSingleDashboardPng(m_current, output_dir, VREF, LSB_MV, fft_scale_mode, unit_mode);
+            out_png = exportSingleDashboardPng(m_current, output_dir, curr_vref, curr_lsb_mv, fft_scale_mode, unit_mode);
             printf("Arquivo .mat atualizado (%s) e painel PNG salvo (%s)!\n", m_current.file_path, out_png);
         end
 

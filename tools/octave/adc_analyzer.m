@@ -7,7 +7,7 @@ function results = adc_analyzer(target_file, wave_type)
     %   - src/triggering/   : detectSignalTrigger, estimateSignalPeriod
     %   - src/conditioning/ : getWaveformSpec, generateIdealReference,
     %                         computeStaticAndTimeErrors
-    %   - src/spectral/     : computeSpectralMetrics (FFT tripla e fundamental)
+    %   - src/spectral/     : computeSpectralMetrics (FFT tripla, DR e piso de ruído)
     %   - src/linearity/    : computeHistogramLinearity (DNL, INL, Missing Codes)
     %   - utils/            : analyzeSingleCapture, launchAnalyzerDashboard,
     %                         createAnalyzerPlots, updateAnalyzerDashboard,

@@ -3,6 +3,20 @@ function out_png = exportSingleDashboardPng(m, output_dir, VREF, LSB_MV, fft_sca
     % EXPORTSINGLEDASHBOARDPNG - Exporta o painel de 6 gráficos de uma captura para PNG
     % =========================================================================
 
+    if nargin < 3 || isempty(VREF)
+        if isfield(m, "vref") && isfinite(m.vref) && m.vref > 0
+            VREF = m.vref;
+        else
+            VREF = 5.0;
+        end
+    end
+    if nargin < 4 || isempty(LSB_MV)
+        if isfield(m, "lsb_mv") && isfinite(m.lsb_mv) && m.lsb_mv > 0
+            LSB_MV = m.lsb_mv;
+        else
+            LSB_MV = (VREF / 256.0) * 1e3;
+        end
+    end
     if nargin < 5 || isempty(fft_scale_mode)
         fft_scale_mode = 1;
     end

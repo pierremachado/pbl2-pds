@@ -26,6 +26,7 @@ Para evitar que o tráfego serial interfira na temporização das conversões ou
 
 ### Decisões de Firmware (`firmware/adc_uart/adc_uart.ino`)
 
+- **Referência `AVCC` (`REFS1:0 = 01`, $5{,}0\text{ V}$ nominal):** Configura a faixa de entrada do ADC para $0\text{ V}$ a $5{,}0\text{ V}$ ($1\text{ LSB} \approx 19{,}53\text{ mV}$) nos ensaios multi-forma de onda desta branch. *(Nota: os ensaios originais documentados na entrega em [`docs/presentation/main.pdf`](docs/presentation/main.pdf) e na branch `main` utilizaram a referência interna `REFS1:0 = 11` de $2{,}56\text{ V}$ nominais.)*
 - **Eliminação de *Jitter* (`TIMSK0 = 0`):** Desativa a interrupção de *overflow* do `Timer0` do Arduino (`millis()`), que bloquearia interrupções por $\sim 6\text{ }\mu\text{s}$ a cada $1{,}024\text{ ms}$ e causaria atraso periódico no disparo do ADC ou *overrun* em frequências altas.
 - **Isolamento Analógico (`DIDR0` / `DIDR2`):** Desliga o buffer digital *Schmitt-Trigger* do pino analógico, evitando corrente de comutação quando a rampa cruza $V_{CC}/2$.
 - **Barreiras de Memória (`asm volatile("" ::: "memory")`):** Impedem que o compilador `avr-gcc` reordene o acesso às variáveis de controle e ao `sampling_buffer` em torno do início e do fim da captura por interrupção.
@@ -53,35 +54,40 @@ Para evitar que o tráfego serial interfira na temporização das conversões ou
 
 ## 3. Processamento no Octave e Métricas
 
-O pipeline modular em `tools/octave/` executa o condicionamento do sinal e extrai as métricas estáticas e dinâmicas:
+O pipeline modular em `tools/octave/` executa o condicionamento do sinal e extrai as métricas estáticas e dinâmicas para múltiplas formas de onda (`triangular`, `sine`, `sawtooth` e `square`):
 
-1. **Trigger, Período e Referência Ideal (`src/triggering/`, `src/conditioning/`):** Detecção de cruzamentos de nível médio com histerese de $\pm 8\% V_{pp}$ e interpolação linear sub-amostra, seguida de refinamento Simplex (`fminsearch`) de período $T_p$ e fase $\phi_0$ para gerar a onda triangular contínua $y_{\text{cont}}(n) \in [0, 255]$ e sua versão quantizada ideal.
-2. **Ganho, Offset e Erros no Tempo (`computeStaticAndTimeErrors.m`):** Regressão linear por mínimos quadrados ($y_{\text{ADC}} \approx G \cdot y_{\text{ideal}} + b$) na região central livre de saturação ($10 \le y_{\text{ideal}} \le 245$), obtendo Erro de Ganho, Erro de Offset, MAE, RMSE bruto e RMSE residual (após compensação de ganho e offset).
-3. **Linearidade por Histograma (`computeHistogramLinearity.m`):** Recorte em número inteiro de períodos para calcular $\text{DNL}(k) = H(k)/\overline{H} - 1$, $\text{INL}(k) = \sum [\text{DNL}(j) - \overline{\text{DNL}}]$, contagem de *missing codes* ($H(k) = 0$) e verificação de monotonicidade.
-4. **Espectro em `dBFS` e Faixa Dinâmica (`computeSpectralMetrics.m`):** Uma onda triangular ideal possui harmônicas ímpares ($3f_0, 5f_0, \dots$) com decaimento de $1/k^2$ ($3f_0$ a $-19{,}08\text{ dBc}$). O analisador aplica janela de Hann e calcula a FFT tripla normalizada em $\text{dBFS}$ ($0\text{ dBFS} = 127{,}5\text{ LSB}$)
+1. **Trigger, Período e Referência Ideal (`src/triggering/`, `src/conditioning/`):** *Schmitt trigger* com histerese de $\pm 8\% V_{pp}$ e interpolação linear sub-amostra, seguida de refinamento Simplex (`fminsearch`) de período $T_p$ e fase $\phi_0$ para gerar a onda contínua ideal $y_{\text{cont}}(n) \in [0, 255]$ (via `getWaveformSpec.m`) e sua versão quantizada ideal.
+2. **Ganho, Offset e Erros no Tempo (`computeStaticAndTimeErrors.m`):** Regressão linear por mínimos quadrados ($y_{\text{ADC}} \approx G \cdot y_{\text{ideal}} + b$) na região central livre de saturação ($10 \le y_{\text{ideal}} \le 245$, ou medianas dos platôs para onda quadrada), obtendo Erro de Ganho, Erro de Offset, MAE, RMSE bruto e RMSE intrínseco (após compensação de ganho e offset).
+3. **Linearidade por Histograma (`computeHistogramLinearity.m`):** Recorte em número inteiro de períodos para calcular $\text{DNL}(k)$, $\text{INL}(k)$, contagem de *missing codes* ($H(k) = 0$) e verificação de monotonicidade desacoplada de *missing codes*, usando histograma uniforme (triangular/dente de serra) ou **histograma senoidal (IEEE Std 1241)** para sinais senoidais.
+4. **Espectro FFT, Faixa Dinâmica e Piso de Ruído (`computeWindowedSpectrum.m`, `computeSpectralMetrics.m`):** FFT tripla unilateral com seleção de janela (`Hanning`, `Retangular`, `Hamming` e `Blackman`) e escalas em `dB` ($0\text{ dB} = 127{,}5\text{ LSB}$), `Linear (LSB)` ou `Tensão (V)`, além do cálculo do **piso de ruído RMS** (via Parseval mascarando DC e harmônicas) e da **Faixa Dinâmica (`DR`)** em $\text{dB}$.
+
 ---
 
 ## 4. Principais Resultados e Exemplos Visuais
 
-Nas 35 capturas preservadas (**13 ensaios principais**, **4 contraexemplos didáticos** e **18 repetições**), a calibração com osciloscópio de bancada indicou uma referência interna efetiva de **$V_{\text{ref,real}} \approx 2{,}31\text{ V}$** (dentro da faixa de $2{,}30\text{ V}$ a $2{,}80\text{ V}$ do datasheet para os $2{,}56\text{ V}$ nominais, correspondendo a $1\text{ LSB}_{\text{real}} \approx 9{,}02\text{ mV}$).
+O diretório `tools/octave/data/` reúne **ambas** as baterias de ensaios, com detecção automática da tensão de referência (`vref`) por captura no `adc_analyzer`:
 
-| Métrica (13 ensaios principais, $1\text{ Hz}$ a $60\text{ Hz}$) | Resultado observado |
+- **Bateria triangular da entrega (`2,56 V` nominais / $V_{\text{ref,real}} \approx 2{,}31\text{ V}$):** 35 capturas (**13 ensaios principais** de $1\text{ Hz}$ a $60\text{ Hz}$ até $f_s = 32{,}79\text{ kHz}$, **4 contraexemplos didáticos** e **18 repetições** em `archive/`), além de 7 capturas de bancada (`sample_20261106_*`), detalhadas em [`docs/presentation/main.pdf`](docs/presentation/main.pdf).
+- **Bateria multi-forma de onda (`AVCC = 5,0 V`):** 16 capturas em `8196,7 Hz` (13 senoidais de $30\text{ Hz}$ a $2063\text{ Hz}$, 2 dente de serra e 1 triangular).
+
+| Métrica (13 ensaios triangulares principais, $1\text{ Hz}$ a $60\text{ Hz}$) | Resultado observado |
 | :--- | :--- |
-| **RMSE residual (após ajuste de ganho/offset)** | **$0{,}34\text{ a }0{,}46\text{ LSB}$** (próximo ao limite teórico de $0{,}29\text{ LSB}$) |
-| **Erro de Offset / Erro de Ganho residual** | **$-0{,}38\text{ a }+0{,}05\text{ LSB}$** / **$+2{,}24\text{ a }+4{,}29\text{ LSB}$** ($+0{,}88\%$ a $+1{,}68\%\text{ FSR}$) |
-| **Códigos ausentes (*Missing Codes*)** | **$0$** em todos os 13 ensaios principais |
+| **RMSE residual (após ajuste de ganho/offset)** | **$0{,}34\text{ a }0{,}44\text{ LSB}$** (próximo ao limite teórico de $0{,}29\text{ LSB}$) |
+| **Erro de Offset / Erro de Ganho residual** | **$-0{,}38\text{ a }+0{,}06\text{ LSB}$** / **$+2{,}24\text{ a }+4{,}29\text{ LSB}$** ($+0{,}88\%$ a $+1{,}68\%\text{ FSR}$) |
+| **Faixa Dinâmica (`DR`) / Piso de Ruído RMS** | **$46{,}4\text{ a }48{,}3\text{ dB}$** / **$0{,}35\text{ a }0{,}43\text{ LSB}$** |
+| **Códigos ausentes (*Missing Codes*)** | **$0$** em todos os 13 ensaios principais (100% monotônicos) |
 
-### Painel de Análise Completa (Amostra de Exemplo)
+### Painel de Análise Integrado (Senoidal $60\text{ Hz}$, $V_{\text{ref}} = 5{,}0\text{ V}$)
 
-![Painel de análise de amostra](tools/octave/outputs/analysis_sample_20261106_102822_177.png)
+![Painel de análise integrado](tools/octave/outputs/analysis_sample_sine_20261125_140427_134_sine.png)
 
 ### Captura no Osciloscópio Digital (`uart_oscilloscope.m`)
 
-![Captura no osciloscópio em tempo real](tools/octave/outputs/sample_20261106_102822_177_osc.png)
+![Captura no osciloscópio em tempo real](tools/octave/outputs/sample_sine_20261125_140427_134_osc.png)
 
-### Contraexemplo: Saturação no Topo por Desvio de $V_{\text{ref}}$ ($2{,}56\text{ V}$ vs. $2{,}31\text{ V}$)
+### Ensaio Triangular de Referência da Entrega ($10\text{ Hz}$, $V_{\text{ref}} = 2{,}56\text{ V}$)
 
-![Contraexemplo de saturação](tools/octave/outputs/analysis_contraex_saturado_2v56_f05Hz_fs02000Hz.png)
+![Ensaio triangular de 10 Hz](docs/presentation/Imagens/analysis_10hz.png)
 
 ---
 

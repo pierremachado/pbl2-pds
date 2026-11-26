@@ -6,13 +6,16 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type,
     % e empacota os resultados na estrutura padronizada 'm'.
     % Se wave_type não for fornecido, usa o campo 'wave_type' salvo no .mat
     % (quando existir) ou "triangular" como padrão.
+    % A tensão de referência (vref) é lida do próprio .mat quando presente;
+    % capturas legadas da entrega original (adc_*, contraex_*, dup_*,
+    % sample_20261106_*) sem campo 'vref' usam 2,56 V; demais usam VREF (5,0 V).
     % =========================================================================
 
-    if nargin < 2 || isempty(VREF)
-        VREF = 5.0;
+    if nargin < 2
+        VREF = [];
     end
-    if nargin < 3 || isempty(LSB_MV)
-        LSB_MV = (VREF / 256.0) * 1e3;
+    if nargin < 3
+        LSB_MV = [];
     end
     if nargin < 4 || isempty(align_mode)
         align_mode = "opt";
@@ -27,6 +30,22 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type,
     raw = load(mat_path);
     [~, fname, fext] = fileparts(mat_path);
 
+    if isfield(raw, "vref") && isnumeric(raw.vref) && isscalar(raw.vref) && isfinite(raw.vref) && raw.vref > 0
+        file_vref = double(raw.vref);
+    elseif ~isfield(raw, "wave_type") && isLegacy2v56Capture(fname)
+        file_vref = 2.56;
+    elseif ~isempty(VREF)
+        file_vref = double(VREF);
+    else
+        file_vref = 5.0;
+    end
+
+    if ~isempty(LSB_MV) && ~isempty(VREF) && abs(file_vref - double(VREF)) < 1e-9
+        file_lsb_mv = double(LSB_MV);
+    else
+        file_lsb_mv = (file_vref / 256.0) * 1e3;
+    end
+
     if isempty(wave_type)
         if isfield(raw, "wave_type") && ~isempty(raw.wave_type)
             wave_type = raw.wave_type;
@@ -39,6 +58,8 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type,
     m = struct();
     m.file_name  = [fname, fext];
     m.file_path  = mat_path;
+    m.vref       = file_vref;
+    m.lsb_mv     = file_lsb_mv;
     m.wave_type  = wspec.type;
     m.wave_label = wspec.label;
     m.wave_short = wspec.short_label;
@@ -79,8 +100,8 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type,
     trig = detectSignalTrigger(samples);
     per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode, wspec.type);
     ref  = generateIdealReference(samples, trig, per, wspec.type);
-    err  = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wspec.type);
-    spec = computeSpectralMetrics(samples, actual_sampling_frequency, ref, wspec.type, window_type);
+    err  = computeStaticAndTimeErrors(samples, trig, per, ref, file_lsb_mv, wspec.type);
+    spec = computeSpectralMetrics(samples, actual_sampling_frequency, ref, wspec.type, window_type, per.freq_hz, file_lsb_mv);
     lin  = computeHistogramLinearity(samples, trig, per, ref, wspec.type);
 
     % 3. Empacotamento unificado na estrutura 'm'
@@ -144,14 +165,18 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type,
     m.max_abs_err_pct_fsr = err.max_abs_err_pct_fsr;
     m.mape_signal_pct     = err.mape_signal_pct;
 
-    m.freq_axis      = spec.freq_axis;
-    m.mag_db         = spec.mag_db;
-    m.mag_db_quant   = spec.mag_db_quant;
-    m.mag_db_ref     = spec.mag_db_ref;
-    m.mag_lin        = spec.mag_lin;
-    m.mag_lin_quant  = spec.mag_lin_quant;
-    m.mag_lin_ref    = spec.mag_lin_ref;
-    m.phase_deg      = spec.phase_deg;
+    m.freq_axis           = spec.freq_axis;
+    m.mag_db              = spec.mag_db;
+    m.mag_db_quant        = spec.mag_db_quant;
+    m.mag_db_ref          = spec.mag_db_ref;
+    m.mag_lin             = spec.mag_lin;
+    m.mag_lin_quant       = spec.mag_lin_quant;
+    m.mag_lin_ref         = spec.mag_lin_ref;
+    m.phase_deg           = spec.phase_deg;
+    m.dr_db               = spec.dr_db;
+    m.noise_floor_rms_lsb = spec.noise_floor_rms_lsb;
+    m.noise_floor_rms_mv  = spec.noise_floor_rms_mv;
+    m.noise_floor_rms_pct = spec.noise_floor_rms_pct;
 
     m.linearity_valid    = lin.is_valid;
     m.hist_mode          = lin.hist_mode;
@@ -170,4 +195,11 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type,
     m.missing_codes      = lin.missing_codes;
     m.is_monotonic       = lin.is_monotonic;
     m.nonmono_codes      = lin.nonmono_codes;
+end
+
+function tf = isLegacy2v56Capture(fname)
+    tf = strncmpi(fname, "adc_", 4) || ...
+         strncmpi(fname, "contraex_", 9) || ...
+         strncmpi(fname, "dup_", 4) || ...
+         strncmpi(fname, "sample_20261106_", 16);
 end

@@ -65,13 +65,17 @@ function plots = updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF,
         win_lbl = m.window_label;
     end
     if isfinite(m.fund_freq_fft)
-        fft_sub = sprintf("Fundamental = %.2f Hz | Janela: %s", m.fund_freq_fft, win_lbl);
+        fft_top = sprintf("FFT (%s) | f0 = %.2f Hz", win_lbl, m.fund_freq_fft);
     else
-        fft_sub = sprintf("Sem componente AC | Janela: %s", win_lbl);
+        fft_top = sprintf("FFT (%s) | Sem comp. AC", win_lbl);
     end
-    title(plots.ax_fft, { ...
-        sprintf("FFT: ADC vs. Quantizado vs. %s", m.wave_label), ...
-        fft_sub}, "fontsize", 9.5, "interpreter", "none");
+    if isfinite(m.dr_db) && isfinite(u.noise_floor)
+        fft_sub = sprintf(["DR: %.1f dB | Ruído: ", u.val_fmt, " %s"], ...
+                          m.dr_db, u.noise_floor, u.err_unit);
+    else
+        fft_sub = "DR: N/A | Ruído: N/A";
+    end
+    title(plots.ax_fft, {fft_top, fft_sub}, "fontsize", 9.5, "interpreter", "none");
 
     % Atualiza legendas de forma de onda apenas quando ela mudar
     if ~strcmp(plots.last_wave_label, m.wave_label)
@@ -167,6 +171,7 @@ function u = getUnitConfig(m, unit_mode, VREF, LSB_MV)
         u.rmse         = m.rmse_mv;
         u.rmse_intr    = m.rmse_intrinsic_mv;
         u.mae          = m.mae_mv;
+        u.noise_floor  = m.noise_floor_rms_mv;
     elseif unit_mode == 3
         u.scale_sig    = 100.0 / 256.0;
         u.sig_unit_lbl = "Escala (%FSR)";
@@ -183,6 +188,7 @@ function u = getUnitConfig(m, unit_mode, VREF, LSB_MV)
         u.rmse         = m.rmse_pct_fsr;
         u.rmse_intr    = m.rmse_intrinsic_pct;
         u.mae          = m.mae_pct_fsr;
+        u.noise_floor  = m.noise_floor_rms_pct;
     else
         u.scale_sig    = 1.0;
         u.sig_unit_lbl = "Código ADC (0 a 255)";
@@ -199,6 +205,7 @@ function u = getUnitConfig(m, unit_mode, VREF, LSB_MV)
         u.rmse         = m.rmse_lsb;
         u.rmse_intr    = m.rmse_intrinsic_lsb;
         u.mae          = m.mae_lsb;
+        u.noise_floor  = m.noise_floor_rms_lsb;
     end
 end
 

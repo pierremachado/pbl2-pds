@@ -42,13 +42,13 @@ assert(sqrt(mean((per.y_plot - ref.ideal_cont_plot).^2)) < 0.01);
 % 3. Testes multi-forma de onda (senoidal, dente de serra e quadrada)
 lsb_mv_5v = (5.0 / 256.0) * 1e3;
 
-% 3a. Senoidal quantizada (8 bits): frequência, referência, FFT e histograma senoidal
+% 3a. Senoidal quantizada (8 bits): frequência, referência, FFT, DR, ruído e histograma senoidal
 samples_sin = round(127.5 * (1 + sin(2 * pi * (n / (fs / 32) + 0.07))));
 trig_s = detectSignalTrigger(samples_sin);
 per_s  = estimateSignalPeriod(samples_sin, fs, trig_s, "opt", "sine");
 ref_s  = generateIdealReference(samples_sin, trig_s, per_s, "sine");
 err_s  = computeStaticAndTimeErrors(samples_sin, trig_s, per_s, ref_s, lsb_mv_5v, "sine");
-spec_s = computeSpectralMetrics(samples_sin, fs, ref_s, "sine");
+spec_s = computeSpectralMetrics(samples_sin, fs, ref_s, "sine", "hanning", per_s.freq_hz, lsb_mv_5v);
 lin_s  = computeHistogramLinearity(samples_sin, trig_s, per_s, ref_s, "sine");
 assert(abs(per_s.freq_hz - 32) < 0.05);
 assert(err_s.rmse_lsb < 0.5);
@@ -59,8 +59,25 @@ assert(abs(spec_s.fund_freq_fft - 32) < 0.5);
 assert(abs(spec_s.fund_mag_db) < 0.2);
 assert(abs(spec_s.fund_mag_lin - 127.5) < 1.5);
 assert(strcmp(spec_s.window_type, "hanning") && strcmp(spec_s.window_label, "Hanning"));
-assert(~isfield(spec_s, "enob_bits") && ~isfield(spec_s, "sinad_db") && ~isfield(spec_s, "thd_db") && ~isfield(spec_s, "dr_db"));
+assert(isfinite(spec_s.dr_db) && spec_s.dr_db > 47.0);
+assert(isfinite(spec_s.noise_floor_rms_lsb) && spec_s.noise_floor_rms_lsb > 0.10 && spec_s.noise_floor_rms_lsb < 0.40);
+assert(abs(spec_s.noise_floor_rms_mv - spec_s.noise_floor_rms_lsb * lsb_mv_5v) < 1e-9);
+assert(abs(spec_s.noise_floor_rms_pct - (spec_s.noise_floor_rms_lsb / 256.0) * 100.0) < 1e-9);
+assert(~isfield(spec_s, "enob_bits") && ~isfield(spec_s, "sinad_db") && ~isfield(spec_s, "thd_db") && ~isfield(spec_s, "sfdr_dbc"));
 assert(~isfield(spec_s, "mag_pct") && ~isfield(spec_s, "mag_dbfs"));
+
+% Senoide quantizada com M = 37 ciclos primos em N = 4096 (IEEE 1241): DR ideal ~49,9 dB e ruído ~0,29 LSB
+samples_sin_p = round(127.5 * (1 + sin(2 * pi * (37 * n / N + 0.07))));
+trig_p = detectSignalTrigger(samples_sin_p);
+per_p  = estimateSignalPeriod(samples_sin_p, fs, trig_p, "opt", "sine");
+ref_p  = generateIdealReference(samples_sin_p, trig_p, per_p, "sine");
+spec_p = computeSpectralMetrics(samples_sin_p, fs, ref_p, "sine", "hanning", per_p.freq_hz, lsb_mv_5v);
+assert(spec_p.dr_db > 48.0 && spec_p.dr_db < 52.0);
+assert(spec_p.noise_floor_rms_lsb > 0.24 && spec_p.noise_floor_rms_lsb < 0.34);
+
+% Sinal DC constante: DR e piso de ruído devem retornar NaN
+spec_dc = computeSpectralMetrics(128 * ones(N, 1), fs, ref_s, "sine");
+assert(isnan(spec_dc.dr_db) && isnan(spec_dc.noise_floor_rms_lsb) && isnan(spec_dc.noise_floor_rms_mv) && isnan(spec_dc.noise_floor_rms_pct));
 
 % 3b. Dente de serra quantizada (8 bits): frequência, referência e histograma uniforme
 samples_saw = round(255 * mod(n / (fs / 16) + 0.11, 1));
@@ -113,14 +130,17 @@ for level = [0, 128, 255]
     assert(isnan(spec.peak_frequency) && isnan(spec.peak_db) && isnan(spec.peak_lin));
 end
 
-% 4b. Janelas FFT (retangular, hanning, hamming e blackman): preservação de amplitude e lóbulos
+% 4b. Janelas FFT (retangular, hanning, hamming e blackman): preservação de amplitude, Parseval e lóbulos
 sine_exact = 127.5 + 127.5 * sin(2 * pi * 64 * n / N);
+expected_power = (127.5 ^ 2) / 2.0;
 for wname = {"rectangular", "hanning", "hamming", "blackman"}
     sw = computeOscilloscopeSpectrum(sine_exact, fs, wname{1});
     assert(strcmp(sw.window_type, wname{1}));
     assert(abs(sw.peak_db) < 0.01);
     assert(abs(sw.peak_lin - 127.5) < 0.15);
     assert(sw.peak_frequency == 128);
+    sw_full = computeWindowedSpectrum(sine_exact, fs, wname{1});
+    assert(abs(sum(sw_full.psd_parseval) - expected_power) / expected_power < 0.01);
 end
 sine_leak = 127.5 + 127.5 * sin(2 * pi * 64.5 * n / N);
 sw_rect  = computeOscilloscopeSpectrum(sine_leak, fs, "rectangular");
@@ -136,4 +156,23 @@ trig_dc = detectSignalTrigger(128 * ones(N, 1));
 per_dc = estimateSignalPeriod(128 * ones(N, 1), fs, trig_dc, "trig", "none");
 assert(strcmp(per_dc.wave_type, "none") && isfinite(per_dc.freq_hz));
 
-disp("Todos os testes (triangular, senoidal, dente de serra, quadrada, desligado e FFT) passaram.");
+% 6. Resolução automática de Vref por captura (2,56 V legada vs. 5,0 V multiwave)
+data_dir = fullfile(base, "data");
+legacy_tri = fullfile(data_dir, "adc_f10Hz_fs08192Hz_pre16.mat");
+if exist(legacy_tri, "file")
+    m_leg = analyzeSingleCapture(legacy_tri, 5.0, lsb_mv_5v, "opt", "", "hanning");
+    assert(abs(m_leg.vref - 2.56) < 1e-9);
+    assert(abs(m_leg.lsb_mv - 10.0) < 1e-9);
+    assert(strcmp(m_leg.wave_type, "triangular"));
+    assert(m_leg.dr_db > 45.0 && m_leg.dr_db < 51.0);
+end
+new_sin = fullfile(data_dir, "sample_sine_20261125_140427_134.mat");
+if exist(new_sin, "file")
+    m_new = analyzeSingleCapture(new_sin, 5.0, lsb_mv_5v, "opt", "", "hanning");
+    assert(abs(m_new.vref - 5.0) < 1e-9);
+    assert(abs(m_new.lsb_mv - lsb_mv_5v) < 1e-9);
+    assert(strcmp(m_new.wave_type, "sine"));
+    assert(m_new.dr_db > 44.0 && m_new.dr_db < 51.0);
+end
+
+disp("Todos os testes (triangular, senoidal, dente de serra, quadrada, desligado, FFT e Vref) passaram.");

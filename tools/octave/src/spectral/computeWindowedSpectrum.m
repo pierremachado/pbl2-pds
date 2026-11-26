@@ -9,9 +9,10 @@ function s = computeWindowedSpectrum(signal, sampling_frequency, window_type)
     %   - "blackman"
     %
     % Calcula magnitude unilateral em LSB (mag_lin, normalizada pela soma da
-    % janela) e em dB relativos ao fundo de escala senoidal (0 dB = 127,5 LSB),
-    % fase em graus e eixo de frequências, tratando corretamente o bin de
-    % Nyquist para N par ou ímpar.
+    % janela), em dB relativos ao fundo de escala senoidal (0 dB = 127,5 LSB),
+    % densidade de potência normalizada por Parseval (psd_parseval), fase em
+    % graus e eixo de frequências, tratando corretamente o bin de Nyquist para
+    % N par ou ímpar.
     % =========================================================================
 
     if nargin < 3 || isempty(window_type)
@@ -25,6 +26,7 @@ function s = computeWindowedSpectrum(signal, sampling_frequency, window_type)
     win = buildWindow(N, wtype);
 
     win_sum = sum(win);
+    win_power_gain = mean(win .^ 2);
     half_N = floor(N / 2) + 1;
     % DC e Nyquist (quando N é par) não possuem par de frequência negativa.
     last_paired = half_N - (mod(N, 2) == 0);
@@ -37,12 +39,18 @@ function s = computeWindowedSpectrum(signal, sampling_frequency, window_type)
         mag_lin(2:last_paired) = 2.0 * mag_lin(2:last_paired);
     end
 
+    psd_parseval = (abs(Y_half) .^ 2) / (N^2 * win_power_gain);
+    if last_paired >= 2
+        psd_parseval(2:last_paired) = 2.0 * psd_parseval(2:last_paired);
+    end
+
     s = struct();
     s.window_type  = wtype;
     s.window_label = wlabel;
     s.freq_axis    = (0:(half_N - 1))' * (sampling_frequency / N);
     s.mag_lin      = mag_lin;
     s.mag_db       = 20.0 * log10(max(mag_lin / 127.5, 1e-6));
+    s.psd_parseval = psd_parseval;
     s.phase_deg    = rad2deg(angle(Y_half));
     s.half_N       = half_N;
     s.last_paired  = last_paired;

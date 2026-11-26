@@ -66,7 +66,7 @@ uint16_t UART0_Receive16(void) {
 void ADC_Init(uint8_t channel) {
   channel &= 0b1111;  // canais 0 a 15
 
-  // REFS1:0 = 11: referência interna de 2,56 V
+  // REFS1:0 = 01: referência AVCC (5,0 V nominal)
   // ADLAR = 1: resultado justificado à esquerda, os 8 bits mais significativos ficam em ADCH
   // MUX2:0: três bits menos significativos do canal
   ADMUX = (0 << REFS1) | (1 << REFS0) | (1 << ADLAR) | (channel & 0b111);
