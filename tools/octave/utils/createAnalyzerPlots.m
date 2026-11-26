@@ -50,7 +50,7 @@ function plots = createAnalyzerPlots(fig, has_controls)
     grid(plots.ax_fft, "on");
     ylim(plots.ax_fft, [-105, 5]);
     xlabel(plots.ax_fft, "Frequência (Hz)");
-    ylabel(plots.ax_fft, "Magnitude (dBFS)");
+    ylabel(plots.ax_fft, "Magnitude (dB)");
     title(plots.ax_fft, "FFT: ADC vs. Quantizado vs. Referência", "fontsize", 9.5, "interpreter", "none");
     legend(plots.ax_fft, {"FFT Ideal Puro", "FFT Quantizado 256n", "FFT ADC Capturado", "Fundamental"}, ...
            "location", "northeast", "fontsize", 7.5);

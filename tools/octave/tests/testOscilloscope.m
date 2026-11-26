@@ -56,9 +56,11 @@ assert(abs(err_s.rmse_mv - err_s.rmse_lsb * lsb_mv_5v) < 1e-9);
 assert(lin_s.is_valid && strcmp(lin_s.hist_mode, "sine"));
 assert(isnan(lin_s.dnl(1)) && isnan(lin_s.dnl(256)));
 assert(abs(spec_s.fund_freq_fft - 32) < 0.5);
-assert(abs(spec_s.fund_mag_dbfs) < 0.2);
-assert(abs(spec_s.fund_mag_pct - 100.0) < 1.0);
+assert(abs(spec_s.fund_mag_db) < 0.2);
+assert(abs(spec_s.fund_mag_lin - 127.5) < 1.5);
+assert(strcmp(spec_s.window_type, "hanning") && strcmp(spec_s.window_label, "Hanning"));
 assert(~isfield(spec_s, "enob_bits") && ~isfield(spec_s, "sinad_db") && ~isfield(spec_s, "thd_db") && ~isfield(spec_s, "dr_db"));
+assert(~isfield(spec_s, "mag_pct") && ~isfield(spec_s, "mag_dbfs"));
 
 % 3b. Dente de serra quantizada (8 bits): frequência, referência e histograma uniforme
 samples_saw = round(255 * mod(n / (fs / 16) + 0.11, 1));
@@ -94,22 +96,36 @@ assert(isnan(lin_m.dnl(1)) && isnan(lin_m.dnl(256)));
 assert(isnan(lin_m.inl(1)) && isnan(lin_m.inl(256)));
 assert(lin_m.missing_codes == 1 && lin_m.is_monotonic);
 
-% 4. Espectro unilateral (dBFS e linear 0-100%): Nyquist, N ímpar e DC constante
+% 4. Espectro unilateral (dB e amplitude linear em LSB): Nyquist, N ímpar, DC e 4 janelas
 spec = computeOscilloscopeSpectrum(127.5 + 127.5 * (-1).^n, fs);
-assert(abs(spec.mag_dbfs(end)) < 1e-9);
-assert(abs(spec.mag_pct(end) - 100.0) < 1e-6);
+assert(abs(spec.mag_db(end)) < 1e-9);
+assert(abs(spec.mag_lin(end) - 127.5) < 1e-6);
 spec = computeOscilloscopeSpectrum(127.5 + 127.5 * sin(2*pi*64*n/N), fs);
-assert(abs(spec.peak_dbfs) < 0.001);
-assert(abs(spec.peak_pct - 100.0) < 0.02);
+assert(abs(spec.peak_db) < 0.001);
+assert(abs(spec.peak_lin - 127.5) < 0.02);
 assert(spec.peak_frequency == 128);
 n_odd = (0:4094)';
 spec = computeOscilloscopeSpectrum(127.5 + 127.5*cos(2*pi*100*n_odd/4095), fs);
-assert(abs(spec.peak_dbfs) < 0.001);
-assert(abs(spec.peak_pct - 100.0) < 0.02);
+assert(abs(spec.peak_db) < 0.001);
+assert(abs(spec.peak_lin - 127.5) < 0.02);
 for level = [0, 128, 255]
     spec = computeOscilloscopeSpectrum(level * ones(N, 1), fs);
-    assert(isnan(spec.peak_frequency) && isnan(spec.peak_dbfs) && isnan(spec.peak_pct));
+    assert(isnan(spec.peak_frequency) && isnan(spec.peak_db) && isnan(spec.peak_lin));
 end
+
+% 4b. Janelas FFT (retangular, hanning, hamming e blackman): preservação de amplitude e lóbulos
+sine_exact = 127.5 + 127.5 * sin(2 * pi * 64 * n / N);
+for wname = {"rectangular", "hanning", "hamming", "blackman"}
+    sw = computeOscilloscopeSpectrum(sine_exact, fs, wname{1});
+    assert(strcmp(sw.window_type, wname{1}));
+    assert(abs(sw.peak_db) < 0.01);
+    assert(abs(sw.peak_lin - 127.5) < 0.15);
+    assert(sw.peak_frequency == 128);
+end
+sine_leak = 127.5 + 127.5 * sin(2 * pi * 64.5 * n / N);
+sw_rect  = computeOscilloscopeSpectrum(sine_leak, fs, "rectangular");
+sw_black = computeOscilloscopeSpectrum(sine_leak, fs, "blackman");
+assert(mean(sw_black.mag_db(200:400)) < mean(sw_rect.mag_db(200:400)) - 25.0);
 
 % 5. Modo sem comparação de onda ideal ("none"): período/frequência e trigger ativos
 per_none = estimateSignalPeriod(samples_sin, fs, trig_s, "trig", "none");

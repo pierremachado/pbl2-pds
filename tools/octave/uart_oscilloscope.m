@@ -6,7 +6,7 @@ pkg load instrument-control;
 % Focado em inspeção rápida de bancada com 2 gráficos em tempo real:
 %   1. Forma de onda alinhada por Trigger Auto + Referência Ideal
 %      (Triangular, Senoidal, Dente de Serra ou Quadrada)
-%   2. Espectro de Magnitude via FFT (dBFS)
+%   2. Espectro de Magnitude via FFT (dB / Linear)
 % Utiliza uart_capture.m para aquisição e salvamento direto em /data (.mat)
 % e delega o condicionamento profundo de dados ao adc_analyzer.m.
 % =========================================================================
@@ -29,8 +29,10 @@ sample_amount      = 4096;
 VREF               = 5.0;
 LSB_MV             = (VREF / 256.0) * 1e3;
 
-wave_types  = {"triangular", "sine", "sawtooth", "square"};
-wave_labels = {"Triangular", "Senoidal", "Dente de Serra", "Quadrada"};
+wave_types    = {"triangular", "sine", "sawtooth", "square"};
+wave_labels   = {"Triangular", "Senoidal", "Dente de Serra", "Quadrada"};
+window_types  = {"hanning", "rectangular", "hamming", "blackman"};
+window_labels = {"Hanning", "Retangular", "Hamming", "Blackman"};
 
 % --- ABERTURA DA PORTA SERIAL ---
 disp("Conectando à porta serial...");
@@ -46,7 +48,7 @@ fig = figure("name", "Osciloscópio Digital UART em Tempo Real (ATmega2560)", ..
              "position", [60, 60, 1280, 720]);
 
 % 1. GRÁFICO ESQUERDO: Forma de Onda + Referência Ideal + Trigger
-ax_wave = axes("parent", fig, "position", [0.05, 0.36, 0.52, 0.57]);
+ax_wave = axes("parent", fig, "position", [0.05, 0.385, 0.52, 0.535]);
 hold(ax_wave, "on");
 x_init = (0:(sample_amount - 1))';
 y_init = zeros(sample_amount, 1);
@@ -59,20 +61,20 @@ ylim(ax_wave, [-10, 265]);
 xlim(ax_wave, [0, 1536]);
 xlabel(ax_wave, "Índice da Amostra (após Trigger Auto)");
 ylabel(ax_wave, "Código ADC (0 a 255)");
-title(ax_wave, "Forma de Onda no Tempo (Referência: Desligado)");
+title(ax_wave, "Forma de Onda no Tempo", "fontsize", 9.5);
 legend(ax_wave, [h_wave, h_trig], {"Sinal ADC (8 bits)", "Nível de Trigger"}, "location", "northeast");
 
-% 2. GRÁFICO DIREITO: Espectro FFT de Magnitude (dBFS)
-ax_fft = axes("parent", fig, "position", [0.63, 0.36, 0.34, 0.57]);
+% 2. GRÁFICO DIREITO: Espectro FFT de Magnitude (dB / Linear)
+ax_fft = axes("parent", fig, "position", [0.63, 0.385, 0.34, 0.535]);
 hold(ax_fft, "on");
-h_fft_mag  = plot(ax_fft, [0, 1], [-100, -100], "-b", "linewidth", 1.1);
-h_fft_peak = plot(ax_fft, 0, 0, "ro", "markersize", 6, "linewidth", 1.5);
+h_fft_mag  = plot(ax_fft, [0, 1], [-105, -105], "-b", "linewidth", 1.1);
+h_fft_peak = plot(ax_fft, NaN, NaN, "ro", "markersize", 6, "linewidth", 1.5);
 hold(ax_fft, "off");
 grid(ax_fft, "on");
-ylim(ax_fft, [-100, 5]);
+ylim(ax_fft, [-105, 5]);
 xlabel(ax_fft, "Frequência (Hz)");
-ylabel(ax_fft, "Magnitude (dBFS)");
-title(ax_fft, "Espectro de Magnitude (FFT Rápida)");
+ylabel(ax_fft, "Magnitude (dB)");
+title(ax_fft, "Espectro de Magnitude (FFT)", "fontsize", 9.5);
 
 % 3. PAINEL DE TELEMETRIA BÁSICA DE BANCADA
 pnl_info = uipanel("parent", fig, "title", sprintf("Telemetria Básica de Bancada (Vref = %.3g V | 1 LSB = %.2f mV)", VREF, LSB_MV), ...
@@ -114,31 +116,40 @@ btn_save = uicontrol(fig, "style", "togglebutton", "units", "normalized", ...
                      "string", "CAPTURAR E SALVAR", "value", 0);
 
 uicontrol(fig, "style", "text", "units", "normalized", ...
-          "position", [0.05, 0.30, 0.09, 0.035], ...
+          "position", [0.05, 0.30, 0.088, 0.035], "horizontalalignment", "right", ...
           "backgroundcolor", [0.95, 0.96, 0.98], "string", "Forma de onda:");
 sel_waveform = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
-                         "position", [0.14, 0.30, 0.14, 0.04], ...
+                         "position", [0.142, 0.30, 0.140, 0.04], ...
                          "string", wave_labels, "value", 1);
 
 uicontrol(fig, "style", "text", "units", "normalized", ...
-          "position", [0.30, 0.30, 0.08, 0.035], ...
+          "position", [0.295, 0.30, 0.082, 0.035], "horizontalalignment", "right", ...
           "backgroundcolor", [0.95, 0.96, 0.98], "string", "Alinhamento:");
 sel_reference = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
-                         "position", [0.38, 0.30, 0.19, 0.04], ...
+                         "position", [0.381, 0.30, 0.189, 0.04], ...
                          "string", {"Trigger auto (rápido)", "Ajustada (adc_analyzer)"}, ...
-                         "value", 1, "enable", "off");
+                         "value", 1, "enable", "on");
 
 uicontrol(fig, "style", "text", "units", "normalized", ...
-          "position", [0.63, 0.30, 0.08, 0.035], ...
-          "backgroundcolor", [0.95, 0.96, 0.98], "string", "Escala FFT:");
+          "position", [0.630, 0.30, 0.032, 0.035], "horizontalalignment", "right", ...
+          "backgroundcolor", [0.95, 0.96, 0.98], "string", "FFT:");
 sel_fft_scale = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
-                          "position", [0.72, 0.30, 0.25, 0.04], ...
-                          "string", {"dBFS (log)", "Linear (0-100%)"}, ...
+                          "position", [0.666, 0.30, 0.128, 0.04], ...
+                          "string", {"dB (log)", "Linear (LSB)", "Tensão (V)"}, ...
                           "value", 1);
+
+uicontrol(fig, "style", "text", "units", "normalized", ...
+          "position", [0.798, 0.30, 0.050, 0.035], "horizontalalignment", "right", ...
+          "backgroundcolor", [0.95, 0.96, 0.98], "string", "Janela:");
+sel_fft_window = uicontrol(fig, "style", "popupmenu", "units", "normalized", ...
+                           "position", [0.852, 0.30, 0.118, 0.04], ...
+                           "string", window_labels, ...
+                           "value", 1);
 
 prev_reference     = -1;
 prev_wave_idx      = -1;
 prev_fft_scale     = -1;
+prev_window_idx    = -1;
 prev_ideal_enabled = false;
 has_valid_frame    = false;
 prev_win_len       = -1;
@@ -175,8 +186,6 @@ unwind_protect
             samples         = captured_samples;
             has_valid_frame = true;
             new_frame_read  = true;
-
-            spec = computeOscilloscopeSpectrum(samples, actual_sampling_frequency);
         else
             pause(0.04);
         end
@@ -188,9 +197,16 @@ unwind_protect
 
         reference_mode = get(sel_reference, "value");
         fft_scale_mode = get(sel_fft_scale, "value");
+        window_idx     = get(sel_fft_window, "value");
         analysis_changed = new_frame_read || (wave_idx ~= prev_wave_idx) || ...
                            (ideal_enabled && (reference_mode ~= prev_reference));
         fft_scale_changed = (fft_scale_mode ~= prev_fft_scale);
+        window_changed    = (window_idx ~= prev_window_idx);
+
+        if new_frame_read || window_changed
+            spec = computeOscilloscopeSpectrum(samples, actual_sampling_frequency, window_types{window_idx});
+            prev_window_idx = window_idx;
+        end
         if analysis_changed
             align_mode = "trig";
             if ideal_enabled && reference_mode == 2
@@ -225,7 +241,7 @@ unwind_protect
 
         sliders_changed = (win_len ~= prev_win_len) || (pan_start ~= prev_pan_start);
 
-        if analysis_changed || sliders_changed || fft_scale_changed
+        if analysis_changed || sliders_changed || fft_scale_changed || window_changed
             if analysis_changed
                 if ideal_enabled
                     set(h_ideal, "xdata", per.x_plot, "ydata", ref.ideal_cont_plot, "visible", "on");
@@ -237,28 +253,46 @@ unwind_protect
                 ylim(ax_wave, [-10, 265]);
             end
 
-            if analysis_changed || fft_scale_changed
+            if analysis_changed || fft_scale_changed || window_changed
                 f_max_view = min(actual_sampling_frequency / 2.0, max(200.0, 18.0 * per.freq_hz));
-                if fft_scale_mode == 2
-                    set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_pct);
-                    set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_pct);
-                    max_pct = 100.0;
-                    if isfinite(spec.peak_pct)
-                        max_pct = max(100.0, spec.peak_pct);
+                if fft_scale_mode == 2 || fft_scale_mode == 3
+                    if fft_scale_mode == 3
+                        fft_scale   = VREF / 256.0;
+                        fft_min_top = 0.54 * VREF;
+                        fft_ylabel  = "Amplitude (V)";
+                    else
+                        fft_scale   = 1.0;
+                        fft_min_top = 135.0;
+                        fft_ylabel  = "Amplitude (LSB)";
                     end
-                    ylim(ax_fft, [0, max(105.0, 1.05 * max_pct)]);
-                    ylabel(ax_fft, "Magnitude (% FS)");
+                    mag_y  = spec.mag_lin * fft_scale;
+                    peak_y = spec.peak_lin * fft_scale;
+                    set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", mag_y);
+                    set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", peak_y);
+                    max_amp = 0.0;
+                    if isfinite(peak_y)
+                        max_amp = max(mag_y(:));
+                    end
+                    ylim(ax_fft, [0, max(fft_min_top, 1.08 * max_amp)]);
+                    ylabel(ax_fft, fft_ylabel);
                 else
-                    set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_dbfs);
-                    set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_dbfs);
-                    ylim(ax_fft, [-100, 5]);
-                    ylabel(ax_fft, "Magnitude (dBFS)");
+                    set(h_fft_mag,  "xdata", spec.freq_axis, "ydata", spec.mag_db);
+                    set(h_fft_peak, "xdata", spec.peak_frequency, "ydata", spec.peak_db);
+                    ylim(ax_fft, [-105, 5]);
+                    ylabel(ax_fft, "Magnitude (dB)");
                 end
                 xlim(ax_fft, [0, f_max_view]);
+                peak_text_fft = "sem componente AC";
+                if isfinite(spec.peak_frequency)
+                    peak_text_fft = sprintf("%.2f Hz", spec.peak_frequency);
+                end
+                title(ax_fft, {"Espectro de Magnitude (FFT)", ...
+                               sprintf("Fundamental = %s | Janela: %s", peak_text_fft, spec.window_label)}, ...
+                      "fontsize", 9.5, "interpreter", "none");
                 prev_fft_scale = fft_scale_mode;
             end
 
-            if analysis_changed
+            if analysis_changed || window_changed
                 if ideal_enabled ~= prev_ideal_enabled
                     if ideal_enabled
                         legend(ax_wave, [h_ideal, h_wave, h_trig], ...
@@ -273,7 +307,7 @@ unwind_protect
                 end
 
                 curr_wave_label = ifelse(ideal_enabled, ref.wave_label, "Desligado");
-                title(ax_wave, sprintf("Forma de Onda no Tempo (Referência: %s)", curr_wave_label));
+                title(ax_wave, sprintf("Forma de Onda no Tempo (Referência: %s)", curr_wave_label), "fontsize", 9.5);
 
                 peak_text = "sem componente AC";
                 if isfinite(spec.peak_frequency)

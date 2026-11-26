@@ -1,4 +1,4 @@
-function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
+function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type, window_type)
     % =========================================================================
     % ANALYZESINGLECAPTURE - Condiciona os dados e calcula as métricas de um .mat
     %
@@ -19,6 +19,9 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     end
     if nargin < 5
         wave_type = "";
+    end
+    if nargin < 6 || isempty(window_type)
+        window_type = "hanning";
     end
 
     raw = load(mat_path);
@@ -77,7 +80,7 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     per  = estimateSignalPeriod(samples, actual_sampling_frequency, trig, align_mode, wspec.type);
     ref  = generateIdealReference(samples, trig, per, wspec.type);
     err  = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wspec.type);
-    spec = computeSpectralMetrics(samples, actual_sampling_frequency, ref, wspec.type);
+    spec = computeSpectralMetrics(samples, actual_sampling_frequency, ref, wspec.type, window_type);
     lin  = computeHistogramLinearity(samples, trig, per, ref, wspec.type);
 
     % 3. Empacotamento unificado na estrutura 'm'
@@ -99,8 +102,10 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
 
     m.freq_hz         = per.freq_hz;
     m.fund_freq_fft   = spec.fund_freq_fft;
-    m.fund_mag_dbfs   = spec.fund_mag_dbfs;
-    m.fund_mag_pct    = spec.fund_mag_pct;
+    m.fund_mag_db     = spec.fund_mag_db;
+    m.fund_mag_lin    = spec.fund_mag_lin;
+    m.window_type     = spec.window_type;
+    m.window_label    = spec.window_label;
     m.period_sec      = per.period_sec;
     m.period_samples  = per.period_samples;
     m.num_full_cycles = lin.num_full_cycles;
@@ -140,12 +145,12 @@ function m = analyzeSingleCapture(mat_path, VREF, LSB_MV, align_mode, wave_type)
     m.mape_signal_pct     = err.mape_signal_pct;
 
     m.freq_axis      = spec.freq_axis;
-    m.mag_dbfs       = spec.mag_dbfs;
-    m.mag_dbfs_quant = spec.mag_dbfs_quant;
-    m.mag_dbfs_ref   = spec.mag_dbfs_ref;
-    m.mag_pct        = spec.mag_pct;
-    m.mag_pct_quant  = spec.mag_pct_quant;
-    m.mag_pct_ref    = spec.mag_pct_ref;
+    m.mag_db         = spec.mag_db;
+    m.mag_db_quant   = spec.mag_db_quant;
+    m.mag_db_ref     = spec.mag_db_ref;
+    m.mag_lin        = spec.mag_lin;
+    m.mag_lin_quant  = spec.mag_lin_quant;
+    m.mag_lin_ref    = spec.mag_lin_ref;
     m.phase_deg      = spec.phase_deg;
 
     m.linearity_valid    = lin.is_valid;

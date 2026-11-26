@@ -4,7 +4,7 @@ function plots = updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF,
     % =========================================================================
 
     if nargin < 8 || isempty(fft_scale_mode)
-        fft_scale_mode = 1; % 1: dBFS (log), 2: Linear (0-100% FS)
+        fft_scale_mode = 1; % 1: dB (log), 2: Linear (LSB), 3: Tensão (V)
     end
 
     u = getUnitConfig(m, unit_mode, VREF, LSB_MV);
@@ -15,7 +15,7 @@ function plots = updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF,
     set(plots.h_ideal_quant, "xdata", m.x_plot, "ydata", m.ideal_quant_plot * u.scale_sig);
     set(plots.h_wave,        "xdata", m.x_plot, "ydata", m.y_plot * u.scale_sig);
     set(plots.h_trig,        "xdata", [0, x_end], "ydata", [m.trig_level, m.trig_level] * u.scale_sig);
-    % Limites vazios preservam o pan/zoom nativo ao trocar a unidade.
+    % Limites vazios preservam o pan/zoom nativo ao trocar unidade/janela.
     if ~isempty(pan_start)
         xlim(plots.ax_wave, [pan_start, pan_start + win_len]);
     end
@@ -28,29 +28,46 @@ function plots = updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF,
 
     % 2. FFT Tripla (ADC vs Quantizado Ideal vs Referência Contínua)
     f_max_view = min(m.actual_sampling_frequency / 2.0, max(150.0, 18.0 * m.freq_hz));
-    if fft_scale_mode == 2
-        set(plots.h_fft_ref,   "xdata", m.freq_axis, "ydata", m.mag_pct_ref);
-        set(plots.h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_pct_quant);
-        set(plots.h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_pct);
-        set(plots.h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_pct);
-        max_pct = max([100.0; m.mag_pct(:); m.mag_pct_ref(:)]);
-        ylim(plots.ax_fft, [0, max(105.0, 1.05 * max_pct)]);
-        ylabel(plots.ax_fft, "Magnitude (% FS)");
+    if fft_scale_mode == 2 || fft_scale_mode == 3
+        if fft_scale_mode == 3
+            fft_scale   = VREF / 256.0;
+            fft_min_top = 0.54 * VREF;
+            fft_ylabel  = "Amplitude (V)";
+        else
+            fft_scale   = 1.0;
+            fft_min_top = 135.0;
+            fft_ylabel  = "Amplitude (LSB)";
+        end
+        fft_ref_y   = m.mag_lin_ref * fft_scale;
+        fft_quant_y = m.mag_lin_quant * fft_scale;
+        fft_adc_y   = m.mag_lin * fft_scale;
+        fft_peak_y  = m.fund_mag_lin * fft_scale;
+        set(plots.h_fft_ref,   "xdata", m.freq_axis, "ydata", fft_ref_y);
+        set(plots.h_fft_quant, "xdata", m.freq_axis, "ydata", fft_quant_y);
+        set(plots.h_fft_adc,   "xdata", m.freq_axis, "ydata", fft_adc_y);
+        set(plots.h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", fft_peak_y);
+        max_amp = max([0; fft_adc_y(:); fft_ref_y(:)]);
+        ylim(plots.ax_fft, [0, max(fft_min_top, 1.08 * max_amp)]);
+        ylabel(plots.ax_fft, fft_ylabel);
     else
-        set(plots.h_fft_ref,   "xdata", m.freq_axis, "ydata", m.mag_dbfs_ref);
-        set(plots.h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_dbfs_quant);
-        set(plots.h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_dbfs);
-        set(plots.h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_dbfs);
+        set(plots.h_fft_ref,   "xdata", m.freq_axis, "ydata", m.mag_db_ref);
+        set(plots.h_fft_quant, "xdata", m.freq_axis, "ydata", m.mag_db_quant);
+        set(plots.h_fft_adc,   "xdata", m.freq_axis, "ydata", m.mag_db);
+        set(plots.h_fft_peak,  "xdata", m.fund_freq_fft, "ydata", m.fund_mag_db);
         ylim(plots.ax_fft, [-105, 5]);
-        ylabel(plots.ax_fft, "Magnitude (dBFS)");
+        ylabel(plots.ax_fft, "Magnitude (dB)");
     end
     if ~isempty(pan_start)
         xlim(plots.ax_fft, [0, f_max_view]);
     end
+    win_lbl = "Hanning";
+    if isfield(m, "window_label") && ~isempty(m.window_label)
+        win_lbl = m.window_label;
+    end
     if isfinite(m.fund_freq_fft)
-        fft_sub = sprintf("Fundamental = %.2f Hz", m.fund_freq_fft);
+        fft_sub = sprintf("Fundamental = %.2f Hz | Janela: %s", m.fund_freq_fft, win_lbl);
     else
-        fft_sub = "Sem componente AC";
+        fft_sub = sprintf("Sem componente AC | Janela: %s", win_lbl);
     end
     title(plots.ax_fft, { ...
         sprintf("FFT: ADC vs. Quantizado vs. %s", m.wave_label), ...
@@ -117,7 +134,7 @@ function plots = updateAnalyzerDashboard(m, unit_mode, pan_start, win_len, VREF,
             set(plots.h_nonmono, "xdata", NaN, "ydata", NaN);
         end
         ylim(plots.ax_inl, [min(-1.5, m.inl_min - 0.4), max(1.5, m.inl_max + 0.4)]);
-        inl_sub = sprintf("Min/Max: %+.2f / %+.2f LSB | Missing: %d", ...
+        inl_sub = sprintf("Min/Max: %+.2f/%+.2f LSB | Missing: %d", ...
                           m.inl_min, m.inl_max, m.missing_codes);
         title(plots.ax_inl, {"INL", inl_sub}, "fontsize", 9.5, "interpreter", "none");
     else
