@@ -1,36 +1,31 @@
-function results = adc_analyzer(mode_or_file, save_updated_mat, wave_type)
+function results = adc_analyzer(target_file, wave_type)
     % =========================================================================
     % ADC_ANALYZER - Orquestrador de Condicionamento e Análise Offline do ADC
-    % Configurado para ATmega2560 com Vref = 2.56 V (8 bits = 256 níveis)
+    % Configurado para ATmega2560 com Vref = 5.0 V (AVCC, 8 bits = 256 níveis)
     %
     % Arquitetura modular:
     %   - src/triggering/   : detectSignalTrigger, estimateSignalPeriod
     %   - src/conditioning/ : getWaveformSpec, generateIdealReference,
     %                         computeStaticAndTimeErrors
-    %   - src/spectral/     : computeSpectralMetrics (FFT tripla, DR, SINAD, ENOB)
+    %   - src/spectral/     : computeSpectralMetrics (FFT tripla e fundamental)
     %   - src/linearity/    : computeHistogramLinearity (DNL, INL, Missing Codes)
     %   - utils/            : analyzeSingleCapture, launchAnalyzerDashboard,
-    %                         runBatchAnalysis, exportSingleDashboardPng, etc.
+    %                         createAnalyzerPlots, updateAnalyzerDashboard,
+    %                         exportSingleDashboardPng, saveEnrichedMat
     %
     % Formas de uso no GNU Octave:
-    %   adc_analyzer()                            -> Painel Interativo (GUI)
-    %   adc_analyzer("batch")                     -> Lote (usa wave_type do .mat ou triangular)
-    %   adc_analyzer("batch", false, "sine")      -> Lote forçando forma senoidal
-    %   adc_analyzer("arquivo.mat")               -> Painel focado no arquivo
-    %   adc_analyzer("arquivo.mat", false, "sawtooth") -> Painel com forma inicial
-    %   adc_analyzer("batch", true)               -> Lote + enriquece todos os .mat
+    %   adc_analyzer()                       -> Painel Interativo (GUI)
+    %   adc_analyzer("arquivo.mat")          -> Painel focado no arquivo
+    %   adc_analyzer("arquivo.mat", "sine")  -> Painel com forma de onda inicial
     %
     % Formas de onda aceitas em wave_type:
     %   "triangular" | "sine" ("senoidal") | "sawtooth" ("dente de serra") | "square" ("quadrada")
     % =========================================================================
 
-    if nargin < 1 || isempty(mode_or_file)
-        mode_or_file = "gui";
+    if nargin < 1 || isempty(target_file)
+        target_file = "";
     end
-    if nargin < 2 || isempty(save_updated_mat)
-        save_updated_mat = false;
-    end
-    if nargin < 3
+    if nargin < 2
         wave_type = "";
     end
 
@@ -48,10 +43,10 @@ function results = adc_analyzer(mode_or_file, save_updated_mat, wave_type)
         mkdir(output_dir);
     end
 
-    % Constantes de Hardware do ADC (ATmega2560 com REFS1:0 = 11 e ADLAR = 1)
-    VREF      = 2.56;              % Referência interna de 2,56 V
-    LSB_VOLTS = VREF / 256.0;      % 1 LSB = 10 mV (0,01 V)
-    LSB_MV    = LSB_VOLTS * 1e3;   % 10,0 mV
+    % Constantes de Hardware do ADC (ATmega2560 com REFS1:0 = 01 [AVCC] e ADLAR = 1)
+    VREF      = 5.0;               % Referência AVCC de 5,0 V
+    LSB_VOLTS = VREF / 256.0;      % 1 LSB ≈ 19,53 mV
+    LSB_MV    = LSB_VOLTS * 1e3;
 
     mat_files = dir(fullfile(data_dir, "*.mat"));
     if isempty(mat_files)
@@ -60,16 +55,10 @@ function results = adc_analyzer(mode_or_file, save_updated_mat, wave_type)
     [~, sort_idx] = sort({mat_files.name});
     mat_files = mat_files(sort_idx);
 
-    % 1. Modo Lote (Batch): processa todos os arquivos, exporta CSV e gráficos
-    if strcmpi(mode_or_file, "batch")
-        results = runBatchAnalysis(mat_files, data_dir, output_dir, VREF, LSB_MV, save_updated_mat, wave_type);
-        return;
-    end
-
-    % 2. Localiza o arquivo inicial caso tenha sido especificado por nome
+    % 1. Localiza o arquivo inicial caso tenha sido especificado por nome
     init_file_idx = 1;
-    if ~strcmpi(mode_or_file, "gui")
-        [~, target_name, target_ext] = fileparts(mode_or_file);
+    if ~isempty(target_file) && ~strcmpi(target_file, "gui")
+        [~, target_name, target_ext] = fileparts(target_file);
         if isempty(target_ext)
             target_ext = ".mat";
         end
@@ -87,7 +76,7 @@ function results = adc_analyzer(mode_or_file, save_updated_mat, wave_type)
         end
     end
 
-    % 3. Abre o Painel Digital Interativo (ou retorna a estrutura se sem display)
+    % 2. Abre o Painel Digital Interativo (ou retorna a estrutura se sem display)
     if ~isempty(available_graphics_toolkits())
         results = launchAnalyzerDashboard(mat_files, init_file_idx, data_dir, output_dir, VREF, LSB_MV, wave_type);
     else

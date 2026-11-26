@@ -69,7 +69,6 @@ Nas 35 capturas preservadas (**13 ensaios principais**, **4 contraexemplos didá
 | :--- | :--- |
 | **RMSE residual (após ajuste de ganho/offset)** | **$0{,}34\text{ a }0{,}46\text{ LSB}$** (próximo ao limite teórico de $0{,}29\text{ LSB}$) |
 | **Erro de Offset / Erro de Ganho residual** | **$-0{,}38\text{ a }+0{,}05\text{ LSB}$** / **$+2{,}24\text{ a }+4{,}29\text{ LSB}$** ($+0{,}88\%$ a $+1{,}68\%\text{ FSR}$) |
-| **Faixa Dinâmica (DR)** | **$46{,}4\text{ a }48{,}3\text{ dB}$** |
 | **Códigos ausentes (*Missing Codes*)** | **$0$** em todos os 13 ensaios principais |
 
 ### Painel de Análise Completa (Amostra de Exemplo)
@@ -94,13 +93,13 @@ docs/datasheets/                     # Datasheets e esquemáticos do ATmega2560 
 firmware/adc_uart/adc_uart.ino       # Firmware AVR (Timer1 CTC + ADC SAR + UART0)
 data/oscilloscope/                   # Capturas do osciloscópio de bancada (.BMP)
 tools/octave/
-├── adc_analyzer.m                   # Orquestrador de análise (GUI interativa e modo batch)
+├── adc_analyzer.m                   # Orquestrador de análise (GUI interativa)
 ├── uart_oscilloscope.m              # Osciloscópio leve de bancada em tempo real
 ├── uart_capture.m                   # Driver de aquisição UART
 ├── src/                             # Módulos matemáticos (triggering, conditioning, spectral, linearity)
-├── utils/                           # Utilitários de dashboard, I/O e exportação
-├── data/                            # Arquivos .mat coletados (principais, contraexemplos e archive/)
-└── outputs/                         # Gráficos exportados (.png) e resumo de métricas (.csv)
+├── utils/                           # Utilitários de dashboard, I/O e exportação PNG
+├── data/                            # Arquivos .mat coletados
+└── outputs/                         # Gráficos exportados (.png)
 ```
 
 No **GNU Octave**, a partir da raiz do repositório:
@@ -108,8 +107,8 @@ No **GNU Octave**, a partir da raiz do repositório:
 ```octave
 addpath("tools/octave");
 
-adc_analyzer()                                 % Abrir o painel interativo
-adc_analyzer("adc_f05Hz_fs04000Hz_pre16.mat")  % Inspecionar uma captura específica
-adc_analyzer("batch")                          % Reprocessar todas as amostras em lote
-uart_oscilloscope                              % Osciloscópio em tempo real (requer placa via USB e pacote instrument-control)
+adc_analyzer()                       % Abrir o painel interativo
+adc_analyzer("arquivo.mat")          % Inspecionar uma captura específica
+adc_analyzer("arquivo.mat", "sine")  % Inspecionar forçando forma de onda
+uart_oscilloscope                    % Osciloscópio em tempo real (requer placa via USB e pacote instrument-control)
 ```

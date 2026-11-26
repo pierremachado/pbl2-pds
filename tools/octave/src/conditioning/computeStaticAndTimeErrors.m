@@ -4,8 +4,7 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     %
     % Calcula:
     %   - Ganho medido, intercepto, erro de offset e erro de ganho (LSB, mV, %FSR)
-    %   - Vetores de erro ponto-a-ponto (bruto, intrínseco sem ganho/offset e
-    %     erro teórico puro de quantização de 8 bits)
+    %   - Vetores de erro ponto-a-ponto (bruto e intrínseco sem ganho/offset)
     %   - Métricas escalares: RMSE bruto, RMSE intrínseco, MAE, Erro Máximo,
     %     Erro Relativo ao fundo de escala (%FSR = 256 LSB) e MAPE (% do sinal).
     %
@@ -16,7 +15,7 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     % =========================================================================
 
     if nargin < 5 || isempty(LSB_MV)
-        LSB_MV = 10.0;
+        LSB_MV = (5.0 / 256.0) * 1e3;
     end
     if nargin < 6 || isempty(wave_type)
         if isfield(ref, "wave_type") && ~isempty(ref.wave_type)
@@ -31,7 +30,6 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     y_plot = per.y_plot;
     valid_len = numel(y_plot);
     ideal_cont_plot = ref.ideal_cont_plot;
-    ideal_quant_plot = ref.ideal_quant_plot;
 
     % Máscara de regime estável (exclui +-2 amostras em torno de saltos abruptos)
     steady_mask = true(valid_len, 1);
@@ -93,8 +91,6 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     ideal_bestfit_plot = min(255, max(0, measured_gain * ideal_cont_plot + intercept_lsb));
     err_intrinsic_lsb  = y_plot - ideal_bestfit_plot;
 
-    err_ideal_quant_lsb = ideal_quant_plot - ideal_cont_plot;
-
     % Métricas escalares de Erro Absoluto, RMSE e Erro Relativo (%FSR = 1 LSB / 256)
     rmse_lsb           = sqrt(mean(err_vs_cont_lsb .^ 2));
     rmse_mv            = rmse_lsb * LSB_MV;
@@ -137,7 +133,6 @@ function err = computeStaticAndTimeErrors(samples, trig, per, ref, LSB_MV, wave_
     err.ideal_bestfit_plot  = ideal_bestfit_plot;
     err.err_vs_cont_lsb     = err_vs_cont_lsb;
     err.err_intrinsic_lsb   = err_intrinsic_lsb;
-    err.err_ideal_quant_lsb = err_ideal_quant_lsb;
     err.rmse_lsb            = rmse_lsb;
     err.rmse_mv             = rmse_mv;
     err.rmse_pct_fsr        = rmse_pct_fsr;

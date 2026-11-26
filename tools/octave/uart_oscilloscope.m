@@ -26,7 +26,7 @@ baud_rate          = 115200;
 sampling_frequency = 2^13; % 8192 Hz
 adc_prescaler      = 16;
 sample_amount      = 4096;
-VREF               = 2.56;
+VREF               = 5.0;
 LSB_MV             = (VREF / 256.0) * 1e3;
 
 wave_types  = {"triangular", "sine", "sawtooth", "square"};
@@ -75,7 +75,7 @@ ylabel(ax_fft, "Magnitude (dBFS)");
 title(ax_fft, "Espectro de Magnitude (FFT Rápida)");
 
 % 3. PAINEL DE TELEMETRIA BÁSICA DE BANCADA
-pnl_info = uipanel("parent", fig, "title", "Telemetria Básica de Bancada (Vref = 2.56 V | 1 LSB = 10 mV)", ...
+pnl_info = uipanel("parent", fig, "title", sprintf("Telemetria Básica de Bancada (Vref = %.3g V | 1 LSB = %.2f mV)", VREF, LSB_MV), ...
                    "units", "normalized", "position", [0.05, 0.11, 0.92, 0.18], ...
                    "backgroundcolor", [0.10, 0.12, 0.16], ...
                    "foregroundcolor", [0.90, 0.95, 1.00]);

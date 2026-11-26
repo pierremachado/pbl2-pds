@@ -40,28 +40,32 @@ ref = generateIdealReference(samples, trig, per, "triangular");
 assert(sqrt(mean((per.y_plot - ref.ideal_cont_plot).^2)) < 0.01);
 
 % 3. Testes multi-forma de onda (senoidal, dente de serra e quadrada)
-% 3a. Senoidal quantizada (8 bits): frequência, referência, ENOB ~8b e histograma IEEE 1241
+lsb_mv_5v = (5.0 / 256.0) * 1e3;
+
+% 3a. Senoidal quantizada (8 bits): frequência, referência, FFT e histograma senoidal
 samples_sin = round(127.5 * (1 + sin(2 * pi * (n / (fs / 32) + 0.07))));
 trig_s = detectSignalTrigger(samples_sin);
 per_s  = estimateSignalPeriod(samples_sin, fs, trig_s, "opt", "sine");
 ref_s  = generateIdealReference(samples_sin, trig_s, per_s, "sine");
-err_s  = computeStaticAndTimeErrors(samples_sin, trig_s, per_s, ref_s, 10.0, "sine");
-spec_s = computeSpectralMetrics(samples_sin, fs, per_s, ref_s, err_s, 10.0, "sine");
+err_s  = computeStaticAndTimeErrors(samples_sin, trig_s, per_s, ref_s, lsb_mv_5v, "sine");
+spec_s = computeSpectralMetrics(samples_sin, fs, ref_s, "sine");
 lin_s  = computeHistogramLinearity(samples_sin, trig_s, per_s, ref_s, "sine");
 assert(abs(per_s.freq_hz - 32) < 0.05);
 assert(err_s.rmse_lsb < 0.5);
+assert(abs(err_s.rmse_mv - err_s.rmse_lsb * lsb_mv_5v) < 1e-9);
 assert(lin_s.is_valid && strcmp(lin_s.hist_mode, "sine"));
 assert(isnan(lin_s.dnl(1)) && isnan(lin_s.dnl(256)));
-assert(spec_s.enob_wave_intrin_bits > 7.5);
-assert(spec_s.enob_bits > 7.5);
+assert(abs(spec_s.fund_freq_fft - 32) < 0.5);
+assert(abs(spec_s.fund_mag_dbfs) < 0.2);
 assert(abs(spec_s.fund_mag_pct - 100.0) < 1.0);
+assert(~isfield(spec_s, "enob_bits") && ~isfield(spec_s, "sinad_db") && ~isfield(spec_s, "thd_db") && ~isfield(spec_s, "dr_db"));
 
 % 3b. Dente de serra quantizada (8 bits): frequência, referência e histograma uniforme
 samples_saw = round(255 * mod(n / (fs / 16) + 0.11, 1));
 trig_w = detectSignalTrigger(samples_saw);
 per_w  = estimateSignalPeriod(samples_saw, fs, trig_w, "opt", "sawtooth");
 ref_w  = generateIdealReference(samples_saw, trig_w, per_w, "sawtooth");
-err_w  = computeStaticAndTimeErrors(samples_saw, trig_w, per_w, ref_w, 10.0, "sawtooth");
+err_w  = computeStaticAndTimeErrors(samples_saw, trig_w, per_w, ref_w, lsb_mv_5v, "sawtooth");
 lin_w  = computeHistogramLinearity(samples_saw, trig_w, per_w, ref_w, "sawtooth");
 assert(abs(per_w.freq_hz - 16) < 0.1);
 assert(err_w.rmse_intrinsic_lsb < 0.5);
@@ -72,7 +76,7 @@ samples_sq = 255 * double(mod(n / (fs / 32) + 0.15, 1) < 0.5);
 trig_q = detectSignalTrigger(samples_sq);
 per_q  = estimateSignalPeriod(samples_sq, fs, trig_q, "opt", "square");
 ref_q  = generateIdealReference(samples_sq, trig_q, per_q, "square");
-err_q  = computeStaticAndTimeErrors(samples_sq, trig_q, per_q, ref_q, 10.0, "square");
+err_q  = computeStaticAndTimeErrors(samples_sq, trig_q, per_q, ref_q, lsb_mv_5v, "square");
 lin_q  = computeHistogramLinearity(samples_sq, trig_q, per_q, ref_q, "square");
 assert(abs(per_q.freq_hz - 32) < 0.2);
 assert(abs(err_q.measured_gain - 1.0) < 0.01);
